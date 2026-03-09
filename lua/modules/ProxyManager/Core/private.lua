@@ -73,7 +73,17 @@ local function _CreateReadOnlyView(t)
         -- __pairs = function() return pairs(t) end, -- GMod 不支持此方法
         __metatable = false
     }
-    view.Iterate = function() return pairs(t) end
+
+    -- view.Iterate = function() return pairs(t) end -- 性能更好，但是封装性不足，备用
+    function view.Iterate()
+        local key = nil
+        return function()
+            key = next(t, key)
+            if key == nil then return nil end
+            return key, t[key]
+        end
+    end
+
     setmetatable(view, mt)
     return view
 end
@@ -139,7 +149,7 @@ local function _RemoveProxyImpl(victim, attacker)
 end
 
 local function _GetAttackerProxyMapViewImpl(victim)
-    local attackerProxyMap = _attackersByVictim[victim] or {}
+    local attackerProxyMap = _attackersByVictim[victim] or {} -- {key: attacker, value: proxy}
     return _CreateReadOnlyView(attackerProxyMap)
 end
 
