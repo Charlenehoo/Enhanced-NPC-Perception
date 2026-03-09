@@ -89,7 +89,6 @@ local function _CreateReadOnlyView(t)
 end
 
 local function _CreateProxyImpl(victim, attacker)
-    debug.Trace()
     if not IsValid(victim) then return end
     if not IsValid(attacker) or not attacker:IsNPC() then return end -- 保证 AddRelationship 等方法有效
     if victim:GetClass() == PROXY_CLASS then return end
@@ -119,7 +118,6 @@ local function _CreateProxyImpl(victim, attacker)
 end
 
 local function _RemoveProxyImpl(victim, attacker)
-    debug.Trace()
     -- 注意：此处先清表后移除实体。
     -- 当 proxy:Remove() 触发 EntityRemoved 钩子时，
     -- 表中条目已被清除，因此钩子中再次调用本函数会因找不到条目而直接返回，
@@ -154,9 +152,7 @@ local function _GetAttackerProxyMapViewImpl(victim)
 end
 
 local function _GetVictimProxyMapViewImpl(attacker)
-    debug.Trace()
     local victimProxyMap = _victimsByAttacker[attacker] or {}
-    PrintTable(victimProxyMap)
     return _CreateReadOnlyView(victimProxyMap)
 end
 

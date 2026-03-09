@@ -77,7 +77,6 @@ end)
 
 hook.Add("EntityRemoved", "ENP_EntityRemoved", function(entity)
     if ProxyManager.IsAttacker(entity) then
-        debug.Trace()
         ProxyManager.RemoveAllProxiesByAttacker(entity)
     end
 end)
