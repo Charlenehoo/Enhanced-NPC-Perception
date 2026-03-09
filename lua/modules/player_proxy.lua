@@ -2,7 +2,7 @@
 local ProxyManager = ProxyManager
 local DEFAULT_ATTACKER_CLASS_PREFIX = ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX
 local PLAYER_SPAWN_DELAY = 0.1
-local RAGDOLL_REMOVE_DELAY = 1
+local RAGDOLL_REMOVE_DELAY = 10
 local IsValid = IsValid
 local player_GetHumans = player.GetHumans
 
@@ -17,32 +17,20 @@ hook.Add("PlayerSpawn", "ENP_PlayerSpawn", function(player)
     ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
 end)
 
--- hook.Add("PlayerDeath", "ENP_PlayerDeath", function(player, _, _)
---     ProxyManager:RemoveProxies(player)
--- end)
-
 local lastHp_c
 local lastHp_d
+local lastState
 hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
     local ragdoll = player.ORag
     if not IsValid(ragdoll) then
         return
     end
 
-    -- +d 代表正数，-d 代表负数
-
-    --   |  1  |  2  |     |  4
-    -- c | nil | nil |     | nil
-    -- d | nil | +d1 |     | -d2
-
-    --   |  1  |  2  |  3  |  4
-    -- c | nil | nil | +d2 | -d3
-    -- d | nil | +d1 | +d2 | +d2
-
     local currentHp_c = ragdoll.Hp_c
     local currentHp_d = ragdoll.Hp_d
     local now = CurTime()
 
+    -- 打印血量变化（始终执行，用于观察）
     if lastHp_c ~= currentHp_c then
         print(string.format("[%d] Hp_c: %d -> %d", now, lastHp_c or 0, currentHp_c or 0))
     elseif lastHp_d ~= currentHp_d then
@@ -52,19 +40,50 @@ hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
     lastHp_c = currentHp_c
     lastHp_d = currentHp_d
 
-    local state = 1
-    if currentHp_d and currentHp_d > 0 and not currentHp_c then
-        state = 2
-    elseif currentHp_c and currentHp_c > 0 then
-        state = 3
-    elseif (currentHp_c and currentHp_c < 0) or (currentHp_d and currentHp_d < 0) then
-        state = 4
+    -- 确定当前状态（仅赋值，不执行操作）
+    local currentState
+    if currentHp_c == nil and currentHp_d == nil then
+        currentState = 1 -- 未介入
+    elseif currentHp_c == nil and currentHp_d ~= nil and currentHp_d > 0 then
+        currentState = 2 -- 死亡动画
+    elseif currentHp_c == nil and currentHp_d ~= nil and currentHp_d <= 0 then
+        currentState = 3 -- 直接死亡
+    elseif currentHp_c ~= nil and currentHp_c > 0 and currentHp_d ~= nil and currentHp_d > 0 then
+        currentState = 4 -- 爬行
+    elseif currentHp_c ~= nil and currentHp_c <= 0 and currentHp_d ~= nil and currentHp_d <= 0 then
+        currentState = 5 -- 最终死亡
+    else
+        currentState = 0 -- 不可能的组合
     end
 
+    -- 状态变化时执行对应操作
+    if lastState ~= currentState then
+        if currentState == 1 then
+            print("尚未介入")
+        elseif currentState == 2 then
+            print("死亡动画")
+            ProxyManager.MoveProxies(player, ragdoll)
+            ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
+        elseif currentState == 3 then
+            print("直接死亡")
+        elseif currentState == 4 then
+            print("爬行挣扎")
+            ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
+        elseif currentState == 5 then
+            print("最终死亡")
+            ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
+        elseif currentState == 0 then
+            print("绝不可能")
+            print("Isdead_d: " .. tostring(ragdoll.Isdead_d))
+            print("Isdead_c: " .. tostring(ragdoll.Isdead_c))
+            print("IsWrithing: " .. tostring(ragdoll.IsWrithing))
+            print("IsTwitching: " .. tostring(ragdoll.IsTwitching))
+            print("IsReviving: " .. tostring(ragdoll.IsReviving))
+            print("IsSelfRevive: " .. tostring(ragdoll.IsSelfRevive))
+        end
+    end
 
-
-    ProxyManager.MoveProxies(player, ragdoll)
-    ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
+    lastState = currentState
 end)
 
 hook.Add("OnEntityCreated", "ENP_OnEntityCreated", function(entity)

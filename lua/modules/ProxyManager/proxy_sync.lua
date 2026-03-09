@@ -1,6 +1,7 @@
 -- .\lua\modules\ProxyManager\proxy_sync.lua
 ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
+setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
 local COMBINE_RANGE = ProxyManager.ATTACKER_RANGE
 local COMBINE_SUPPRESSION_TIME = ProxyManager.ATTACKER_SUPPRESSION_TIME
@@ -29,12 +30,14 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
     local targetBonePos, _ = victim:GetBonePosition(boneIndex) -- https://wiki.facepunch.com/gmod/Entity:GetBonePosition
     for attacker, proxy in attackerProxyMapView.GetIterator() do
-        -- if not IsValid(attacker) then
-        --     continue -- GLua 是 Lua 的方言，支持此关键字
-        -- end
-        -- if not IsValid(proxy) then
-        --     continue
-        -- end
+        -- 安全说明：此循环遍历 attackerProxyMapView（键为 attacker，值为 proxy）。
+        -- 循环体内调用 ProxyManager.CheckOrphanProxy(proxy) 检查代理是否孤儿。
+        -- 若代理无效，CheckOrphanProxy 会调用 ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)，
+        -- 该函数从内部表 _attackersByVictim[victim] 中移除键 attacker，即当前迭代的键。
+        -- 在 Lua 的 next/pairs 遍历中，删除当前迭代的键是安全的，不会导致跳过或重复。
+        -- 警告：请勿在此循环中删除任何其他键（非当前 attacker），否则可能破坏迭代器状态。
+        -- 若将来需要删除其他键，请改用“先收集键，后删除”模式。
+        ProxyManager.CheckOrphanProxy(proxy)
 
         local attackerShootPos = attacker:GetShootPos()
         local distance = attackerShootPos:Distance(targetBonePos)
