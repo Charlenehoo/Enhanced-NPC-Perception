@@ -1,27 +1,52 @@
--- lua\modules\ProxyManager\Core\instances.lua
+-- lua\modules\ProxyManager\Core\private.lua
 ProxyManager = ProxyManager or {}
+local PROXY_CLASS = ProxyManager.PROXY_CLASS
+
+local _private = {}
 
 local IsValid = IsValid
 local table_IsEmpty = table.IsEmpty
-local table_GetKeys = table.GetKeys
-
-local PROXY_CLASS = ProxyManager.PROXY_CLASS
 
 --[[
-    ProxyManager 核心实例管理模块
+    ProxyManager 核心实例管理模块设计原则
 
-    设计原则：
-    1. 私表（_attackersByVictim / _victimsByAttacker）只能通过本模块提供的接口（如 CreateProxy、RemoveProxy 等）进行修改，
-       外部代码可通过只读视图（如 GetAttackerProxyMapView ）安全访问表内容，视图通过元表禁止任何写入操作。
-    2. 所有直接读写私表的函数都必须是 local 函数，并以 "_" 开头命名（如 _CreateProxyImpl），表示模块内部私有，不对外暴露。
-    3. 私表是系统状态的唯一事实来源（Single Source of Truth）。任何与表记录不一致的实体状态（如代理实体失效但表中仍有条目）
-       都应被视为系统错误，需立即修复（重建代理或清理条目）或触发断言。
-    4. 快速失败（Fail Fast）：当检测到私表内部状态不一致（例如正向表有记录但反向表缺失）时，应通过 assert 直接报错终止，
-       以便尽早暴露 bug，防止脏数据扩散。
-    5. 最小化私密访问：私有函数数量应尽可能少，以降低私表被意外操作的风险。内部实现应优先复用现有的公开接口
-       （如 ProxyManager.RemoveProxy）而非编写新的私有函数，仅在无法满足性能或功能需求时才新增私有实现。
-    6. 实体生命周期管控：只有私有函数（以 "_" 开头）可直接调用 ents.Create(PROXY_CLASS) 创建代理实体，
-    或直接调用 proxy:Remove() 销毁代理实体。公开接口必须通过私有函数间接操作，确保实体状态与私表始终同步。
+    文件组织：
+    - private.lua: 包含私有数据（_attackersByVictim, _victimsByAttacker）和内部实现函数，
+      返回一个表 _private，供 public.lua 调用。外部代码不得直接访问此文件。
+    - public.lua: 提供公开 API（CreateProxy, RemoveProxy, MoveProxy, GetAttackerProxyMapView），
+      通过 require 引入 private.lua，在其闭包中操作私有数据，并将函数挂载到全局 ProxyManager 表。
+    - Utils/: 存放辅助函数（如 CheckOrphanProxy, RemoveAllProxiesForVictim），
+      这些函数仅通过公开 API 与核心交互，不直接访问私有数据。
+
+    核心设计原则：
+    1. 私表为单一事实来源
+       私有表 _attackersByVictim 和 _victimsByAttacker 是系统状态的唯一存储。
+       任何与表记录不一致的实体状态（如代理实体失效但表中仍有条目）都视为系统错误，
+       应立即修复（重建代理或清理条目）或通过 assert 触发快速失败。
+
+    2. 私有表访问严格受控
+       私表只能由 private.lua 中的内部函数直接读写。public.lua 不得直接访问私表，
+       必须通过调用 _private 表中的函数间接操作。外部代码（包括 Utils 及其他模块）
+       只能通过 public.lua 提供的公开接口访问系统功能。
+
+    3. 内部函数命名规范
+       所有 private.lua 中定义的内部函数（包括公开接口的底层实现）均以 "_" 开头，
+       并作为 _private 表的方法（如 _private._CreateProxyImpl）。这明确标识其私有性质，
+       防止被外部意外调用。
+
+    4. 快速失败与状态一致性
+       在内部函数中，当检测到私表状态不一致（如正向表存在某键但反向表缺失）时，
+       应立即通过 assert 报错终止，以暴露潜在 bug，防止脏数据扩散。
+
+    5. 最小化内部实现
+       内部函数数量应尽可能少。优先复用现有的公开接口（如 ProxyManager.RemoveProxy）
+       实现功能，仅在无法满足性能或功能需求时才新增私有实现。Utils 中的辅助函数
+       应完全基于公开接口构建，绝不直接访问私表。
+
+    6. 实体生命周期与表状态同步
+       只有 private.lua 中的内部函数可以直接调用 ents.Create(PROXY_CLASS) 创建代理实体，
+       或直接调用 proxy:Remove() 销毁代理实体。公开接口必须通过调用这些内部函数间接操作，
+       确保实体创建/销毁与私表更新在同一个原子操作中完成，维持状态同步。
 ]]
 
 local _attackersByVictim = {} -- {key: victim, value: {key: attacker, value: proxy}}
@@ -41,7 +66,7 @@ local function SetupRelationships(victim, attacker, proxy)
     SetupRelationshipsProxy(attacker, proxy)
 end
 
-local function _CreateProxyImpl(victim, attacker)
+function _private._CreateProxyImpl(victim, attacker)
     if not IsValid(victim) then return end
     if not IsValid(attacker) or not attacker:IsNPC() then return end -- 保证 AddRelationship 等方法有效
     if victim:GetClass() == PROXY_CLASS then return end
@@ -70,9 +95,7 @@ local function _CreateProxyImpl(victim, attacker)
     SetupRelationships(victim, attacker, newProxy)
 end
 
-function ProxyManager.CreateProxy(victim, attacker) return _CreateProxyImpl(victim, attacker) end
-
-local function _RemoveProxyImpl(victim, attacker)
+function _private._RemoveProxyImpl(victim, attacker)
     -- 注意：此处先清表后移除实体。
     -- 当 proxy:Remove() 触发 EntityRemoved 钩子时，
     -- 表中条目已被清除，因此钩子中再次调用本函数会因找不到条目而直接返回，
@@ -101,9 +124,7 @@ local function _RemoveProxyImpl(victim, attacker)
     end
 end
 
-function ProxyManager.RemoveProxy(victim, attacker) return _RemoveProxyImpl(victim, attacker) end
-
-function ProxyManager.GetAttackerProxyMapView(victim)
+function _private._GetAttackerProxyMapViewImpl(victim)
     local attackerProxyMap = _attackersByVictim[victim] or {}
     local view = {}
     local mt = {
@@ -120,20 +141,7 @@ function ProxyManager.GetAttackerProxyMapView(victim)
     return view
 end
 
-function ProxyManager.RemoveAllProxiesForVictim(victim)
-    if not victim then return end
-    local view = ProxyManager.GetAttackerProxyMapView(victim) -- 只读视图
-    -- 收集所有攻击者（遍历过程中会修改表，需提前收集）
-    local attackers = {}
-    for attacker, _ in pairs(view) do
-        table.insert(attackers, attacker)
-    end
-    for _, attacker in ipairs(attackers) do
-        ProxyManager.RemoveProxy(victim, attacker)
-    end
-end
-
-local function _MoveProxiesImpl(oldVictim, newVictim)
+function _private._MoveProxiesImpl(oldVictim, newVictim)
     -- 1. 参数有效性检查
     if not IsValid(oldVictim) or not IsValid(newVictim) then return end
     if oldVictim == newVictim then return end
@@ -199,10 +207,4 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
     _attackersByVictim[oldVictim] = nil
 end
 
-function ProxyManager.MoveProxy(oldVictim, newVictim) return _MoveProxiesImpl(oldVictim, newVictim) end
-
-function ProxyManager.CheckOrphanProxy(proxy)
-    if not IsValid(proxy) then return end
-    if IsValid(proxy.victim) and IsValid(proxy.attacker) then return end
-    ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)
-end
+return _private
