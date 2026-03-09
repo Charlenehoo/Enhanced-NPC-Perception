@@ -28,7 +28,7 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMap)
     ProxyManager.loopCountTable[victim] = boneIndex
 
     local targetBonePos, _ = victim:GetBonePosition(boneIndex) -- https://wiki.facepunch.com/gmod/Entity:GetBonePosition
-    for attacker, proxy in attackerProxyMap.Iterate() do
+    for attacker, proxy in attackerProxyMap.GetIterator() do
         -- if not IsValid(attacker) then
         --     continue -- GLua 是 Lua 的方言，支持此关键字
         -- end

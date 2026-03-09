@@ -26,7 +26,7 @@ function ProxyManager.RemoveAllProxiesByVictim(victim)
     local view = ProxyManager.GetAttackerProxyMapView(victim) -- 只读视图
 
     local attackers = {}
-    for attacker, _ in view.Iterate() do
+    for attacker, _ in view.GetIterator() do
         table.insert(attackers, attacker)
     end
     for _, attacker in ipairs(attackers) do
@@ -39,7 +39,7 @@ function ProxyManager.RemoveAllProxiesByAttacker(attacker)
     local view = ProxyManager.GetVictimProxyMapView(attacker)
 
     local victims = {}
-    for victim, _ in view.Iterate() do
+    for victim, _ in view.GetIterator() do
         table.insert(victims, victim)
     end
     for _, victim in ipairs(victims) do

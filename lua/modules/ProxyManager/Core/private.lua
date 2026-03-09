@@ -74,8 +74,8 @@ local function _CreateReadOnlyView(t)
         __metatable = false
     }
 
-    -- view.Iterate = function() return pairs(t) end -- 性能更好，但是封装性不足，备用
-    function view.Iterate()
+    -- view.GetIterator = function() return pairs(t) end -- 性能更好，但是封装性不足，备用
+    function view.GetIterator()
         local key = nil
         return function()
             key = next(t, key)
