@@ -7,7 +7,7 @@ local IsValid = IsValid
 local BONE_NAMES_WITH_SPINE4 = ProxyManager.BONE_NAMES_WITH_SPINE4
 local BONE_NAMES_WITHOUT_SPINE4 = ProxyManager.BONE_NAMES_WITHOUT_SPINE4
 
-function ProxyManager:ReInitializeBoneCache(victim)
+function ProxyManager.ReInitializeBoneCache(victim)
     if not IsValid(victim) then
         return
     end
@@ -42,13 +42,13 @@ function ProxyManager:ReInitializeBoneCache(victim)
     end
 end
 
-function ProxyManager:InitializeBoneCache(victim)
+function ProxyManager.InitializeBoneCache(victim)
     if not IsValid(victim) then
         return
     end
 
     local boneCache = ProxyManager.boneCacheTable[victim]
-    if not boneCache or #boneCache == 0 then
-        ProxyManager:ReInitializeBoneCache(victim)
+    if not boneCache or table.IsEmpty(boneCache) then
+        ProxyManager.ReInitializeBoneCache(victim)
     end
 end

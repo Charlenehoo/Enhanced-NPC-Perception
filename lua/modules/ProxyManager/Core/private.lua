@@ -1,7 +1,7 @@
 -- lua\modules\ProxyManager\Core\private.lua
+ProxyManager = ProxyManager or {}
+ProxyManager._private = ProxyManager._private or {}
 local PROXY_CLASS = ProxyManager.PROXY_CLASS
-
-local _private = {}
 
 local IsValid = IsValid
 local table_IsEmpty = table.IsEmpty
@@ -51,21 +51,21 @@ local table_IsEmpty = table.IsEmpty
 local _attackersByVictim = {} -- {key: victim, value: {key: attacker, value: proxy}}
 local _victimsByAttacker = {} -- {key: attacker, value: {key: victim, value: proxy}}
 
-local function SetupRelationshipsVictim(victim, attacker)
+local function _SetupRelationshipsVictim(victim, attacker)
     attacker:AddEntityRelationship(victim, D_NU, 99)
 end
 
-local function SetupRelationshipsProxy(attacker, proxy)
+local function _SetupRelationshipsProxy(attacker, proxy)
     attacker:AddRelationship(string.format("%s D_NU 0", PROXY_CLASS))
     attacker:AddEntityRelationship(proxy, D_HT, 99)
 end
 
-local function SetupRelationships(victim, attacker, proxy)
-    SetupRelationshipsVictim(victim, attacker)
-    SetupRelationshipsProxy(attacker, proxy)
+local function _SetupRelationships(victim, attacker, proxy)
+    _SetupRelationshipsVictim(victim, attacker)
+    _SetupRelationshipsProxy(attacker, proxy)
 end
 
-local function CreateReadOnlyView(t)
+local function _CreateReadOnlyView(t)
     local view = {}
     local mt = {
         __index = t,
@@ -77,7 +77,8 @@ local function CreateReadOnlyView(t)
     return view
 end
 
-function _private._CreateProxyImpl(victim, attacker)
+local function _CreateProxyImpl(victim, attacker)
+    debug.Trace()
     if not IsValid(victim) then return end
     if not IsValid(attacker) or not attacker:IsNPC() then return end -- 保证 AddRelationship 等方法有效
     if victim:GetClass() == PROXY_CLASS then return end
@@ -103,10 +104,11 @@ function _private._CreateProxyImpl(victim, attacker)
     _victimsByAttacker[attacker][victim] = newProxy
 
     newProxy:Spawn()
-    SetupRelationships(victim, attacker, newProxy)
+    _SetupRelationships(victim, attacker, newProxy)
 end
 
-function _private._RemoveProxyImpl(victim, attacker)
+local function _RemoveProxyImpl(victim, attacker)
+    debug.Trace()
     -- 注意：此处先清表后移除实体。
     -- 当 proxy:Remove() 触发 EntityRemoved 钩子时，
     -- 表中条目已被清除，因此钩子中再次调用本函数会因找不到条目而直接返回，
@@ -135,22 +137,27 @@ function _private._RemoveProxyImpl(victim, attacker)
     end
 end
 
-function _private._GetAttackerProxyMapViewImpl(victim)
+local function _GetAttackerProxyMapViewImpl(victim)
     local attackerProxyMap = _attackersByVictim[victim] or {}
-    return CreateReadOnlyView(attackerProxyMap)
+    return _CreateReadOnlyView(attackerProxyMap)
 end
 
-function _private._IterateVictimsWithAttackerProxyMapViewImpl()
+local function _GetVictimProxyMapViewImpl(attacker)
+    local victimProxyMap = _victimsByAttacker[attacker] or {}
+    return _CreateReadOnlyView(victimProxyMap)
+end
+
+local function _IterateVictimsWithAttackerProxyMapViewImpl()
     local nextVictim, state, currentVictim = next, _attackersByVictim, nil
     return function()
         local attackerProxyMap
         currentVictim, attackerProxyMap = nextVictim(state, currentVictim)
         if not currentVictim then return nil end
-        return currentVictim, CreateReadOnlyView(attackerProxyMap)
+        return currentVictim, _CreateReadOnlyView(attackerProxyMap)
     end
 end
 
-function _private._MoveProxiesImpl(oldVictim, newVictim)
+local function _MoveProxiesImpl(oldVictim, newVictim)
     -- 1. 参数有效性检查
     if not IsValid(oldVictim) or not IsValid(newVictim) then return end
     if oldVictim == newVictim then return end
@@ -205,7 +212,7 @@ function _private._MoveProxiesImpl(oldVictim, newVictim)
             _victimsByAttacker[attacker][newVictim] = proxy
 
             -- 建立攻击者与新受害者的关系
-            SetupRelationshipsVictim(newVictim, attacker)
+            _SetupRelationshipsVictim(newVictim, attacker)
         else
             -- 代理无效：根据事实来源（attacker 有效）重建代理
             ProxyManager.CreateProxy(newVictim, attacker) -- 自动更新两个表
@@ -216,4 +223,16 @@ function _private._MoveProxiesImpl(oldVictim, newVictim)
     _attackersByVictim[oldVictim] = nil
 end
 
-return _private
+function ProxyManager._private._CreateProxy(victim, attacker) return _CreateProxyImpl(victim, attacker) end
+
+function ProxyManager._private._RemoveProxy(victim, attacker) return _RemoveProxyImpl(victim, attacker) end
+
+function ProxyManager._private._GetAttackerProxyMapView(victim) return _GetAttackerProxyMapViewImpl(victim) end
+
+function ProxyManager._private._GetVictimProxyMapView(attacker) return _GetVictimProxyMapViewImpl(attacker) end
+
+function ProxyManager._private._IterateVictimsWithAttackerProxyMapView()
+    return _IterateVictimsWithAttackerProxyMapViewImpl()
+end
+
+function ProxyManager._private._MoveProxies(oldVictim, newVictim) return _MoveProxiesImpl(oldVictim, newVictim) end
