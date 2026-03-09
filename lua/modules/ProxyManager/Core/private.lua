@@ -171,14 +171,19 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
     if not IsValid(oldVictim) or not IsValid(newVictim) then return end
     if oldVictim == newVictim then return end
 
-    local attackerProxyMap = _attackersByVictim[oldVictim]
-    if not attackerProxyMap then return end -- 无可移动代理
+    local oldAttackerProxyMap = _attackersByVictim[oldVictim]
+    if not oldAttackerProxyMap then return end -- 无可移动代理
 
     -- 2. 彻底清除新受害者上原有的所有代理（避免冲突）
-    ProxyManager.RemoveAllProxiesByVictim(newVictim)
+    local newAttackerProxyMap = _attackersByVictim[newVictim]
+    if newAttackerProxyMap then
+        for attacker, _ in pairs(newAttackerProxyMap) do
+            _RemoveProxyImpl(newVictim, attacker) -- 直接调用私有实现
+        end
+    end
 
     -- 3. 遍历旧受害者对应的所有攻击者
-    for attacker, proxy in pairs(attackerProxyMap) do
+    for attacker, proxy in pairs(oldAttackerProxyMap) do
         -- 3.1 先清理反向索引中关于 oldVictim 的条目
         -- 根据设计，只要 attacker 在正向表中，反向表必然存在
         local victimProxyMap = _victimsByAttacker[attacker]
@@ -197,7 +202,7 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
             if IsValid(proxy) then
                 proxy:Remove()
             end
-            -- 无需再处理 attackerProxyMap 中的键（整个表即将被丢弃）
+            -- 无需再处理 oldAttackerProxyMap 中的键（整个表即将被丢弃）
             continue -- Gmod 支持此关键字
         end
 
@@ -224,7 +229,7 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
             _SetupRelationshipsVictim(newVictim, attacker)
         else
             -- 代理无效：根据事实来源（attacker 有效）重建代理
-            ProxyManager.CreateProxy(newVictim, attacker) -- 自动更新两个表
+            _CreateProxyImpl(newVictim, attacker) -- 自动更新两个表
         end
     end
 
