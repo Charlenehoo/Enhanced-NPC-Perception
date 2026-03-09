@@ -40,7 +40,7 @@ function ProxyManager.RemoveAllProxiesByAttacker(attacker)
 
     local victims = {}
     print("victims count:", #victims)
-    for victim, _ in pairs(view) do
+    for victim, _ in view:Iterate() do
         table.insert(victims, victim)
     end
     for _, victim in ipairs(victims) do

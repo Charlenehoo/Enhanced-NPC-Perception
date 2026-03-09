@@ -70,9 +70,10 @@ local function _CreateReadOnlyView(t)
     local mt = {
         __index = t,
         __newindex = function() error("attempt to modify read-only table view.", 2) end,
-        __pairs = function() return pairs(t) end,
+        -- __pairs = function() return pairs(t) end, -- GMod 不支持此方法
         __metatable = false
     }
+    view.Iterate = function() return pairs(t) end
     setmetatable(view, mt)
     return view
 end
@@ -143,7 +144,9 @@ local function _GetAttackerProxyMapViewImpl(victim)
 end
 
 local function _GetVictimProxyMapViewImpl(attacker)
+    debug.Trace()
     local victimProxyMap = _victimsByAttacker[attacker] or {}
+    PrintTable(victimProxyMap)
     return _CreateReadOnlyView(victimProxyMap)
 end
 
