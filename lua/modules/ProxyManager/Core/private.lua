@@ -65,6 +65,18 @@ local function SetupRelationships(victim, attacker, proxy)
     SetupRelationshipsProxy(attacker, proxy)
 end
 
+local function CreateReadOnlyView(t)
+    local view = {}
+    local mt = {
+        __index = t,
+        __newindex = function() error("attempt to modify read-only table view.", 2) end,
+        __pairs = function() return pairs(t) end,
+        __metatable = false
+    }
+    setmetatable(view, mt)
+    return view
+end
+
 function _private._CreateProxyImpl(victim, attacker)
     if not IsValid(victim) then return end
     if not IsValid(attacker) or not attacker:IsNPC() then return end -- 保证 AddRelationship 等方法有效
@@ -125,24 +137,16 @@ end
 
 function _private._GetAttackerProxyMapViewImpl(victim)
     local attackerProxyMap = _attackersByVictim[victim] or {}
-    local view = {}
-    local mt = {
-        __index = attackerProxyMap,
-        __newindex = function(_, key, value)
-            error("attempt to modify read-only table", 2)
-        end,
-        __pairs = function() return pairs(attackerProxyMap) end,
-        __metatable = false
-    }
-    setmetatable(view, mt)
-    return view
+    return CreateReadOnlyView(attackerProxyMap)
 end
 
-function _private._IterateVictimsImpl()
+function _private._IterateVictimsWithAttackerProxyMapViewImpl()
     local nextVictim, state, currentVictim = next, _attackersByVictim, nil
     return function()
-        currentVictim, _ = nextVictim(state, currentVictim)
-        return currentVictim
+        local attackerProxyMap
+        currentVictim, attackerProxyMap = nextVictim(state, currentVictim)
+        if not currentVictim then return nil end
+        return currentVictim, CreateReadOnlyView(attackerProxyMap)
     end
 end
 

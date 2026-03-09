@@ -25,4 +25,6 @@ function ProxyManager.RemoveAllProxiesByVictim(victim)
     end
 end
 
-function ProxyManager.IterateVictims() return _private._IterateVictimsImpl() end
+function ProxyManager.IterateVictimsWithAttackerProxyMapView()
+    return _private._IterateVictimsWithAttackerProxyMapViewImpl()
+end
