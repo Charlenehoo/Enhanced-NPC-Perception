@@ -2,7 +2,7 @@
 local ProxyManager = ProxyManager
 local DEFAULT_ATTACKER_CLASS_PREFIX = ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX
 local PLAYER_SPAWN_DELAY = 0.1
-local RAGDOLL_REMOVE_DELAY = 10
+local RAGDOLL_REMOVE_DELAY = 4
 local IsValid = IsValid
 local player_GetHumans = player.GetHumans
 
@@ -13,13 +13,22 @@ function ProxyManager.IsAttacker(entity)
     return entity:GetClass():find(DEFAULT_ATTACKER_CLASS_PREFIX, 1, true)
 end
 
-hook.Add("PlayerSpawn", "ENP_PlayerSpawn", function(player)
-    ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
-end)
-
 local lastHp_c
 local lastHp_d
 local lastState
+
+hook.Add("PlayerSpawn", "ENP_PlayerSpawn", function(player)
+    lastHp_c = nil
+    lastHp_d = nil
+    lastState = -1
+    if IsValid(player.ORag) then
+        ProxyManager.MoveProxies(player.ORag, player)
+    else
+        ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
+    end
+    print("===============================")
+end)
+
 hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
     local ragdoll = player.ORag
     if not IsValid(ragdoll) then
@@ -33,8 +42,10 @@ hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
     -- 打印血量变化（始终执行，用于观察）
     if lastHp_c ~= currentHp_c then
         print(string.format("[%d] Hp_c: %d -> %d", now, lastHp_c or 0, currentHp_c or 0))
+        print("===============================")
     elseif lastHp_d ~= currentHp_d then
         print(string.format("[%d] Hp_d: %d -> %d", now, lastHp_d or 0, currentHp_d or 0))
+        print("===============================")
     end
 
     lastHp_c = currentHp_c
@@ -42,44 +53,78 @@ hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
 
     -- 确定当前状态（仅赋值，不执行操作）
     local currentState
-    if currentHp_c == nil and currentHp_d == nil then
-        currentState = 1 -- 未介入
-    elseif currentHp_c == nil and currentHp_d ~= nil and currentHp_d > 0 then
-        currentState = 2 -- 死亡动画
-    elseif currentHp_c == nil and currentHp_d ~= nil and currentHp_d <= 0 then
-        currentState = 3 -- 直接死亡
-    elseif currentHp_c ~= nil and currentHp_c > 0 and currentHp_d ~= nil and currentHp_d > 0 then
-        currentState = 4 -- 爬行
-    elseif currentHp_c ~= nil and currentHp_c <= 0 and currentHp_d ~= nil and currentHp_d <= 0 then
-        currentState = 5 -- 最终死亡
+    if currentHp_d then
+        if currentHp_d <= 0 then
+            if currentHp_c == nil then
+                currentState = 3 -- 直接死亡
+            else                 --  currentHp_c <= 0 then
+                currentState = 5 -- 最终死亡
+            end
+        else
+            if currentHp_c == nil then
+                currentState = 2 -- 死亡动画
+            elseif currentHp_c <= 0 then
+                currentState = 5 -- 最终死亡
+            else
+                currentState = 4 -- 爬行
+            end
+        end
     else
-        currentState = 0 -- 不可能的组合
+        currentState = 1 -- 未介入
     end
+
 
     -- 状态变化时执行对应操作
     if lastState ~= currentState then
         if currentState == 1 then
             print("尚未介入")
-        elseif currentState == 2 then
-            print("死亡动画")
-            ProxyManager.MoveProxies(player, ragdoll)
-            ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
-        elseif currentState == 3 then
-            print("直接死亡")
-        elseif currentState == 4 then
-            print("爬行挣扎")
-            ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
-        elseif currentState == 5 then
-            print("最终死亡")
-            ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
-        elseif currentState == 0 then
-            print("绝不可能")
             print("Isdead_d: " .. tostring(ragdoll.Isdead_d))
             print("Isdead_c: " .. tostring(ragdoll.Isdead_c))
             print("IsWrithing: " .. tostring(ragdoll.IsWrithing))
             print("IsTwitching: " .. tostring(ragdoll.IsTwitching))
             print("IsReviving: " .. tostring(ragdoll.IsReviving))
             print("IsSelfRevive: " .. tostring(ragdoll.IsSelfRevive))
+            print("===============================")
+        elseif currentState == 2 then
+            print("死亡动画")
+            print("Isdead_d: " .. tostring(ragdoll.Isdead_d))
+            print("Isdead_c: " .. tostring(ragdoll.Isdead_c))
+            print("IsWrithing: " .. tostring(ragdoll.IsWrithing))
+            print("IsTwitching: " .. tostring(ragdoll.IsTwitching))
+            print("IsReviving: " .. tostring(ragdoll.IsReviving))
+            print("IsSelfRevive: " .. tostring(ragdoll.IsSelfRevive))
+            print("===============================")
+            ProxyManager.MoveProxies(player, ragdoll)
+            ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
+        elseif currentState == 3 then
+            print("直接死亡")
+            print("Isdead_d: " .. tostring(ragdoll.Isdead_d))
+            print("Isdead_c: " .. tostring(ragdoll.Isdead_c))
+            print("IsWrithing: " .. tostring(ragdoll.IsWrithing))
+            print("IsTwitching: " .. tostring(ragdoll.IsTwitching))
+            print("IsReviving: " .. tostring(ragdoll.IsReviving))
+            print("IsSelfRevive: " .. tostring(ragdoll.IsSelfRevive))
+            print("===============================")
+        elseif currentState == 4 then
+            print("爬行挣扎")
+            print("Isdead_d: " .. tostring(ragdoll.Isdead_d))
+            print("Isdead_c: " .. tostring(ragdoll.Isdead_c))
+            print("IsWrithing: " .. tostring(ragdoll.IsWrithing))
+            print("IsTwitching: " .. tostring(ragdoll.IsTwitching))
+            print("IsReviving: " .. tostring(ragdoll.IsReviving))
+            print("IsSelfRevive: " .. tostring(ragdoll.IsSelfRevive))
+            print("===============================")
+            ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
+        elseif currentState == 5 then
+            print("最终死亡")
+            print("Isdead_d: " .. tostring(ragdoll.Isdead_d))
+            print("Isdead_c: " .. tostring(ragdoll.Isdead_c))
+            print("IsWrithing: " .. tostring(ragdoll.IsWrithing))
+            print("IsTwitching: " .. tostring(ragdoll.IsTwitching))
+            print("IsReviving: " .. tostring(ragdoll.IsReviving))
+            print("IsSelfRevive: " .. tostring(ragdoll.IsSelfRevive))
+            print("===============================")
+            ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
         end
     end
 
@@ -87,7 +132,7 @@ hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
 end)
 
 hook.Add("OnEntityCreated", "ENP_OnEntityCreated", function(entity)
-    if entity:IsNPC() and entity:GetClass():find(DEFAULT_ATTACKER_CLASS_PREFIX, 1, true) then
+    if entity:IsNPC() and entity:GetClass():find(DEFAULT_ATTACKER_CLASS_PREFIX, 1, true) then -- 改为遍历所有 Victim
         for _, player in ipairs(player_GetHumans()) do
             ProxyManager.CreateProxy(player, entity)
         end

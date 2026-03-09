@@ -16,7 +16,7 @@ function ProxyManager.IterateVictimsWithAttackerProxyMapView()
     return ProxyManager._private._IterateVictimsWithAttackerProxyMapView()
 end
 
-function ProxyManager.MoveProxies(oldVictim, newVictim)
+function ProxyManager.MoveProxies(oldVictim, newVictim) -- 须带返回值
     return ProxyManager._private._MoveProxies(oldVictim,
         newVictim)
 end
