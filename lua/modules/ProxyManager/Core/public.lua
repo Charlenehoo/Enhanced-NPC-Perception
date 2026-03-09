@@ -2,7 +2,6 @@
 ProxyManager = ProxyManager or {}
 
 local _private = require("modules.ProxyManager.Core.private")
-
 local IsValid = IsValid
 
 function ProxyManager.CreateProxy(victim, attacker) return _private._CreateProxyImpl(victim, attacker) end

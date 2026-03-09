@@ -1,5 +1,4 @@
 -- lua\modules\ProxyManager\Core\private.lua
-ProxyManager = ProxyManager or {}
 local PROXY_CLASS = ProxyManager.PROXY_CLASS
 
 local _private = {}
@@ -11,11 +10,11 @@ local table_IsEmpty = table.IsEmpty
     ProxyManager 核心实例管理模块设计原则
 
     文件组织：
-    - private.lua: 包含私有数据（_attackersByVictim, _victimsByAttacker）和内部实现函数，
+    - private.lua: 包含私有数据（ _attackersByVictim, _victimsByAttacker ）和内部实现函数，
       返回一个表 _private，供 public.lua 调用。外部代码不得直接访问此文件。
-    - public.lua: 提供公开 API（CreateProxy, RemoveProxy, MoveProxy, GetAttackerProxyMapView），
+    - public.lua: 提供公开 API （ CreateProxy, RemoveProxy, MoveProxy, GetAttackerProxyMapView ），
       通过 require 引入 private.lua，在其闭包中操作私有数据，并将函数挂载到全局 ProxyManager 表。
-    - Utils/: 存放辅助函数（如 CheckOrphanProxy, RemoveAllProxiesForVictim），
+    - util.lua: 存放辅助函数（如 CheckOrphanProxy ）
       这些函数仅通过公开 API 与核心交互，不直接访问私有数据。
 
     核心设计原则：
@@ -133,8 +132,6 @@ function _private._GetAttackerProxyMapViewImpl(victim)
             error("attempt to modify read-only table", 2)
         end,
         __pairs = function() return pairs(attackerProxyMap) end,
-        __ipairs = function() return ipairs(attackerProxyMap) end,
-        __len = function() return #attackerProxyMap end,
         __metatable = false
     }
     setmetatable(view, mt)
