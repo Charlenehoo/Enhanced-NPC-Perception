@@ -45,10 +45,11 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         local isVisible = attacker:IsLineOfSightClear(victim)
 
-        attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] = attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] or {}
+        attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] = attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] or {} --
 
         if isVisible then
-            attacker[ATTACKER_LAST_SIGHTING_TIME_KEY][victim] = currentTime -- 此属性由 attacker 持有更好，避免弱引用问题
+            attacker[ATTACKER_LAST_SIGHTING_TIME_KEY][victim] =
+            currentTime                                                     -- 此属性由 attacker 持有更好，避免弱引用问题，2026-3-9 实际游玩发现由 Victim 持有好，方便转移给 Ragdoll
         end
 
         -- 初始化时，如果 victim 被玩家看见，lastSightTime = currentTime，符合设计
