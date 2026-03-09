@@ -168,11 +168,11 @@ end
 
 local function _MoveProxiesImpl(oldVictim, newVictim)
     -- 1. 参数有效性检查
-    if not IsValid(oldVictim) or not IsValid(newVictim) then return end
-    if oldVictim == newVictim then return end
+    if not IsValid(oldVictim) or not IsValid(newVictim) then return false end
+    if oldVictim == newVictim then return false end
 
     local oldAttackerProxyMap = _attackersByVictim[oldVictim]
-    if not oldAttackerProxyMap then return end -- 无可移动代理
+    if not oldAttackerProxyMap then return false end -- 无可移动代理
 
     -- 2. 彻底清除新受害者上原有的所有代理（避免冲突）
     local newAttackerProxyMap = _attackersByVictim[newVictim]
@@ -235,6 +235,8 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
 
     -- 4. 丢弃旧受害者的映射表（所有条目已处理）
     _attackersByVictim[oldVictim] = nil
+
+    return true
 end
 
 function ProxyManager._private._CreateProxy(victim, attacker) return _CreateProxyImpl(victim, attacker) end

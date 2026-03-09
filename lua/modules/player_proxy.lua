@@ -22,7 +22,9 @@ hook.Add("PlayerSpawn", "ENP_PlayerSpawn", function(player)
     lastHp_d = nil
     lastState = -1
     if IsValid(player.ORag) then
-        ProxyManager.MoveProxies(player.ORag, player)
+        if not ProxyManager.MoveProxies(player.ORag, player) then
+            ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
+        end
     else
         ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
     end
