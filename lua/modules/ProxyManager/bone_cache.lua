@@ -2,6 +2,8 @@
 ProxyManager = ProxyManager or {}
 ProxyManager.boneCacheTable = ProxyManager.boneCacheTable or {}
 
+local IsValid = IsValid
+
 local BONE_NAMES_WITH_SPINE4 = ProxyManager.BONE_NAMES_WITH_SPINE4
 local BONE_NAMES_WITHOUT_SPINE4 = ProxyManager.BONE_NAMES_WITHOUT_SPINE4
 

@@ -12,7 +12,7 @@ function ProxyManager.GetAttackerProxyMapView(victim) return _private._GetAttack
 
 function ProxyManager.MoveProxy(oldVictim, newVictim) return _private._MoveProxiesImpl(oldVictim, newVictim) end
 
-function ProxyManager.RemoveAllProxiesForVictim(victim)
+function ProxyManager.RemoveAllProxiesByVictim(victim)
     if not victim then return end
     local view = ProxyManager.GetAttackerProxyMapView(victim) -- 只读视图
     -- 收集所有攻击者（遍历过程中会修改表，需提前收集）
@@ -24,3 +24,5 @@ function ProxyManager.RemoveAllProxiesForVictim(victim)
         ProxyManager.RemoveProxy(victim, attacker)
     end
 end
+
+function ProxyManager.IterateVictims() return _private._IterateVictimsImpl() end

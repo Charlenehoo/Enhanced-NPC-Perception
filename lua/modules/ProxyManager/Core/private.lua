@@ -138,6 +138,14 @@ function _private._GetAttackerProxyMapViewImpl(victim)
     return view
 end
 
+function _private._IterateVictimsImpl()
+    local nextVictim, state, currentVictim = next, _attackersByVictim, nil
+    return function()
+        currentVictim, _ = nextVictim(state, currentVictim)
+        return currentVictim
+    end
+end
+
 function _private._MoveProxiesImpl(oldVictim, newVictim)
     -- 1. 参数有效性检查
     if not IsValid(oldVictim) or not IsValid(newVictim) then return end
@@ -147,7 +155,7 @@ function _private._MoveProxiesImpl(oldVictim, newVictim)
     if not attackerProxyMap then return end -- 无可移动代理
 
     -- 2. 彻底清除新受害者上原有的所有代理（避免冲突）
-    ProxyManager.RemoveAllProxiesForVictim(newVictim)
+    ProxyManager.RemoveAllProxiesByVictim(newVictim)
 
     -- 3. 遍历旧受害者对应的所有攻击者
     for attacker, proxy in pairs(attackerProxyMap) do
