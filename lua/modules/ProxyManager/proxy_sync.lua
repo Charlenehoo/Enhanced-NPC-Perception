@@ -12,7 +12,7 @@ local IsValid = IsValid
 local CurTime = CurTime
 local util_TraceLine = util.TraceLine
 
-function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMap)
+function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
 
     ProxyManager.InitializeBoneCache(victim)
@@ -28,7 +28,7 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMap)
     ProxyManager.loopCountTable[victim] = boneIndex
 
     local targetBonePos, _ = victim:GetBonePosition(boneIndex) -- https://wiki.facepunch.com/gmod/Entity:GetBonePosition
-    for attacker, proxy in attackerProxyMap.GetIterator() do
+    for attacker, proxy in attackerProxyMapView.GetIterator() do
         -- if not IsValid(attacker) then
         --     continue -- GLua 是 Lua 的方言，支持此关键字
         -- end
@@ -80,9 +80,9 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMap)
 end
 
 function ProxyManager.SyncAllProxies()
-    for victim, attackerProxyMap in ProxyManager.IterateVictimsWithAttackerProxyMapView() do
+    for victim, attackerProxyMapView in ProxyManager.IterateVictimsWithAttackerProxyMapView() do
         if IsValid(victim) then
-            ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMap)
+            ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         end
     end
 end
