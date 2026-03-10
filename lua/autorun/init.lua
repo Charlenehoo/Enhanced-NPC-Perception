@@ -9,4 +9,5 @@ if SERVER then
     include("modules/ProxyManager/hooks.lua")
     include("modules/eda_state_machine.lua")
     include("modules/player_proxy.lua")
+    include("modules/sound_relay.lua")
 end
