@@ -36,6 +36,7 @@ EDAStateMachine.SUB_STATE = {
     WRITHING  = "Writhing",
     TWITCHING = "Twitching",
     REVIVING  = "Reviving",
+    CRAWLING  = "Crawling"
 }
 
 EDAStateMachine.DEBUG = (ProxyManager and ProxyManager.DEBUG) or false -- 复用全局调试标志
@@ -59,6 +60,7 @@ local function GetRagdollFields(ragdoll)
         IsWrithing = ragdoll.IsWrithing,
         IsTwitching = ragdoll.IsTwitching,
         IsReviving = ragdoll.IsReviving,
+        iSCrawling = ragdoll:GetNW2Int("Animation_State", nil) == 3
     }
 end
 
@@ -76,9 +78,9 @@ function EDAStateMachine.OnPlayerSpawn(callback)
 end
 
 -- 内部触发函数
-local function FireMainStateChange(player, ragdoll, oldMain, newMain)
+local function FireMainStateChange(player, ragdoll, oldMain, newMain, oldSub)
     for _, cb in ipairs(callbacks.onMainStateChange) do
-        cb(player, ragdoll, oldMain, newMain)
+        cb(player, ragdoll, oldMain, newMain, oldSub)
     end
 end
 
@@ -101,17 +103,10 @@ function EDAStateMachine.FireOnPlayerSpawn(player)
     end
 end
 
--- 每帧更新状态
-function EDAStateMachine.Update(player)
-    if not IsValid(player) then return end
+-- ==================== 辅助函数（拆分 Update 逻辑）====================
 
-    local ragdoll = GetRagdoll(player)
-    if not IsValid(ragdoll) then return end
-
-    local fields = GetRagdollFields(ragdoll)
-    local currentHp_c = fields.Hp_c
-    local currentHp_d = fields.Hp_d
-
+-- 获取或初始化玩家的记录表
+local function GetOrCreateRecord(player)
     local record = players[player]
     if not record then
         record = {
@@ -122,19 +117,124 @@ function EDAStateMachine.Update(player)
             lastIsWrithing = nil,
             lastIsTwitching = nil,
             lastIsReviving = nil,
+            lastiSCrawling = nil,
         }
         players[player] = record
     end
+    return record
+end
 
-    -- 字段变化调试
-    if EDAStateMachine.DEBUG then
-        if record.lastHp_c ~= currentHp_c then
-            print(string.format("[EDA] %s Hp_c: %s -> %s", player:Name(), tostring(record.lastHp_c),
-                tostring(currentHp_c)))
+-- 更新记录中的原始字段值（用于调试和后续比较）
+local function UpdateRecordFields(record, fields)
+    record.lastHp_c = fields.Hp_c
+    record.lastHp_d = fields.Hp_d
+    record.lastIsWrithing = fields.IsWrithing
+    record.lastIsTwitching = fields.IsTwitching
+    record.lastIsReviving = fields.IsReviving
+    record.lastiSCrawling = fields.iSCrawling
+end
+
+-- 根据 Hp_c 和 Hp_d 计算主状态（遵循真值表）
+-- | c    | d    | state                      |
+-- | ---- | ---- | -------------------------- |
+-- | nil  | nil  | 未介入                     |
+-- | nil  | > 0  | 死亡动画                   |
+-- | nil  | <= 0 | 直接死亡                   |
+-- | > 0  | nil  | 不可能发生 （归入挣扎）    |
+-- | > 0  | > 0  | 挣扎                       |
+-- | > 0  | <= 0 | 最终死亡                   |
+-- | <= 0 | nil  | 不可能发生（归入最终死亡） |
+-- | <= 0 | > 0  | 不可能发生（归入最终死亡） |
+-- | <= 0 | <= 0 | 最终死亡                   |
+local function ComputeMainState(Hp_c, Hp_d)
+    if Hp_c == nil then
+        -- 情况：c 不存在
+        if Hp_d == nil then
+            return EDAStateMachine.MAIN_STATE.UNINTERVENED
+        elseif Hp_d > 0 then
+            return EDAStateMachine.MAIN_STATE.DEATH_ANIM
+        else
+            return EDAStateMachine.MAIN_STATE.DIRECT_DEATH
         end
-        if record.lastHp_d ~= currentHp_d then
+    else
+        -- 情况：c 存在
+        if Hp_c <= 0 then
+            return EDAStateMachine.MAIN_STATE.FINAL_DEATH
+        else
+            if Hp_d == nil or Hp_d > 0 then
+                return EDAStateMachine.MAIN_STATE.STRUGGLE
+            else
+                return EDAStateMachine.MAIN_STATE.FINAL_DEATH
+            end
+        end
+    end
+end
+
+-- 根据主状态和字段计算子状态（仅当主状态为 STRUGGLE 时有效）
+local function ComputeSubState(mainState, fields)
+    if mainState ~= EDAStateMachine.MAIN_STATE.STRUGGLE then
+        return EDAStateMachine.SUB_STATE.NONE
+    end
+
+    if fields.IsWrithing then
+        return EDAStateMachine.SUB_STATE.WRITHING
+    elseif fields.IsTwitching then
+        return EDAStateMachine.SUB_STATE.TWITCHING
+    elseif fields.IsReviving then
+        return EDAStateMachine.SUB_STATE.REVIVING
+    elseif fields.iSCrawling then
+        return EDAStateMachine.SUB_STATE.CRAWLING
+    else
+        return EDAStateMachine.SUB_STATE.NONE
+    end
+end
+
+-- 触发子状态变化回调（如果发生变化）
+local function FireSubStateIfChanged(player, ragdoll, record, newSub, newMain)
+    if newSub == record.lastSubState then return end
+
+    if EDAStateMachine.DEBUG then
+        print(string.format("[EDA] Player %s sub state: %s -> %s (main=%s)",
+            player:Name(), tostring(record.lastSubState), tostring(newSub), tostring(newMain)))
+    end
+
+    FireSubStateChange(player, ragdoll, record.lastSubState, newSub, newMain)
+    record.lastSubState = newSub
+end
+
+-- 触发主状态变化回调（如果发生变化），使用传入的 oldSub（必须是在更新前保存的旧子状态）
+local function FireMainStateIfChanged(player, ragdoll, record, newMain, oldSub)
+    if newMain == record.lastMainState then return end
+
+    if EDAStateMachine.DEBUG then
+        print(string.format("[EDA] Player %s main state: %s -> %s",
+            player:Name(), tostring(record.lastMainState), tostring(newMain)))
+    end
+
+    FireMainStateChange(player, ragdoll, record.lastMainState, newMain, oldSub)
+    record.lastMainState = newMain
+end
+
+-- ==================== 每帧更新（主入口）====================
+
+function EDAStateMachine.Update(player)
+    if not IsValid(player) then return end
+
+    local ragdoll = GetRagdoll(player)
+    if not IsValid(ragdoll) then return end
+
+    local fields = GetRagdollFields(ragdoll)
+    local record = GetOrCreateRecord(player)
+
+    -- 调试：字段变化输出
+    if EDAStateMachine.DEBUG then
+        if record.lastHp_c ~= fields.Hp_c then
+            print(string.format("[EDA] %s Hp_c: %s -> %s", player:Name(), tostring(record.lastHp_c),
+                tostring(fields.Hp_c)))
+        end
+        if record.lastHp_d ~= fields.Hp_d then
             print(string.format("[EDA] %s Hp_d: %s -> %s", player:Name(), tostring(record.lastHp_d),
-                tostring(currentHp_d)))
+                tostring(fields.Hp_d)))
         end
         if record.lastIsWrithing ~= fields.IsWrithing then
             print(string.format("[EDA] %s IsWrithing: %s -> %s", player:Name(), tostring(record.lastIsWrithing),
@@ -150,69 +250,17 @@ function EDAStateMachine.Update(player)
         end
     end
 
-    -- 计算主状态
-    -- local currentMainState
-    -- if not currentHp_d then
-    --     currentMainState = EDAStateMachine.MAIN_STATE.UNINTERVENED
-    -- elseif not currentHp_c then
-    --     if currentHp_d <= 0 then
-    --         currentMainState = EDAStateMachine.MAIN_STATE.DIRECT_DEATH
-    --     else
-    --         currentMainState = EDAStateMachine.MAIN_STATE.DEATH_ANIM
-    --     end
-    -- else
-    --     if currentHp_d <= 0 or currentHp_c <= 0 then
-    --         currentMainState = EDAStateMachine.MAIN_STATE.FINAL_DEATH
-    --     else
-    --         currentMainState = EDAStateMachine.MAIN_STATE.STRUGGLE
-    --     end
-    -- end
+    -- 保存旧子状态（用于主状态回调）
+    local oldSubState = record.lastSubState
 
-    record.lastHp_c = currentHp_c
-    record.lastHp_d = currentHp_d
-    local currentMainState
-    if currentHp_c ~= nil then
-        currentMainState = (currentHp_c <= 0) and EDAStateMachine.MAIN_STATE.FINAL_DEATH or
-            EDAStateMachine.MAIN_STATE.STRUGGLE
-    elseif currentHp_d ~= nil then
-        currentMainState = (currentHp_d <= 0) and EDAStateMachine.MAIN_STATE.DIRECT_DEATH or
-            EDAStateMachine.MAIN_STATE.DEATH_ANIM
-    else
-        currentMainState = EDAStateMachine.MAIN_STATE.UNINTERVENED
-    end
+    -- 更新记录中的原始字段（用于下次比较）
+    UpdateRecordFields(record, fields)
 
-    -- 计算子状态（仅当主状态为 STRUGGLE 时）
-    record.lastIsWrithing = fields.IsWrithing
-    record.lastIsTwitching = fields.IsTwitching
-    record.lastIsReviving = fields.IsReviving
-    local currentSubState = EDAStateMachine.SUB_STATE.NONE
-    if currentMainState == EDAStateMachine.MAIN_STATE.STRUGGLE then
-        if fields.IsWrithing then
-            currentSubState = EDAStateMachine.SUB_STATE.WRITHING
-        elseif fields.IsTwitching then
-            currentSubState = EDAStateMachine.SUB_STATE.TWITCHING
-        elseif fields.IsReviving then
-            currentSubState = EDAStateMachine.SUB_STATE.REVIVING
-        end
-    end
+    -- 计算新状态
+    local newMain = ComputeMainState(fields.Hp_c, fields.Hp_d)
+    local newSub = ComputeSubState(newMain, fields)
 
-    -- 子状态变化处理
-    if currentSubState ~= record.lastSubState then
-        if EDAStateMachine.DEBUG then
-            print(string.format("[EDA] Player %s sub state: %s -> %s (main=%s)",
-                player:Name(), tostring(record.lastSubState), tostring(currentSubState), tostring(currentMainState)))
-        end
-        FireSubStateChange(player, ragdoll, record.lastSubState, currentSubState, currentMainState)
-        record.lastSubState = currentSubState
-    end
-
-    -- 主状态变化处理
-    if currentMainState ~= record.lastMainState then
-        if EDAStateMachine.DEBUG then
-            print(string.format("[EDA] Player %s main state: %s -> %s",
-                player:Name(), tostring(record.lastMainState), tostring(currentMainState)))
-        end
-        FireMainStateChange(player, ragdoll, record.lastMainState, currentMainState)
-        record.lastMainState = currentMainState
-    end
+    -- 触发回调（子状态优先，主状态其次）
+    FireSubStateIfChanged(player, ragdoll, record, newSub, newMain)
+    FireMainStateIfChanged(player, ragdoll, record, newMain, oldSubState)
 end

@@ -1,5 +1,6 @@
 -- .\lua\modules\player_proxy.lua
 local ProxyManager = ProxyManager
+local SoundManager = SoundManager
 local DEFAULT_ATTACKER_CLASS_PREFIX = ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX
 
 local PLAYER_SPAWN_DELAY = 0.1
@@ -10,7 +11,7 @@ local player_GetHumans = player.GetHumans
 
 local EDAStateMachine = EDAStateMachine
 
-EDAStateMachine.OnMainStateChange(function(player, ragdoll, oldMain, newMain)
+EDAStateMachine.OnMainStateChange(function(player, ragdoll, oldMain, newMain, oldSub)
     if newMain == EDAStateMachine.MAIN_STATE.DEATH_ANIM then
         ProxyManager.MoveProxies(player, ragdoll)
         ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
@@ -20,16 +21,32 @@ EDAStateMachine.OnMainStateChange(function(player, ragdoll, oldMain, newMain)
             ProxyManager.CreateProxiesForVictimByClass(ragdoll)
         end
     elseif newMain == EDAStateMachine.MAIN_STATE.FINAL_DEATH then
+        player.ragdoll = ragdoll -- SoundManager 的要求
+        SoundManager:Stop(player)
+        if oldSub == EDAStateMachine.SUB_STATE.CRAWLING then
+            SoundManager:Play(player, "finaldeath", false)
+        end
         ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
     end
 end)
 
 EDAStateMachine.OnSubStateChange(function(player, ragdoll, oldSub, newSub, mainState)
-
+    player.ragdoll = ragdoll -- SoundManager 的要求
+    if newSub == EDAStateMachine.SUB_STATE.TWITCHING or newSub == EDAStateMachine.SUB_STATE.WRITHING then
+        SoundManager:Play(player, "bubble_loop", true)
+    elseif newSub == EDAStateMachine.SUB_STATE.REVIVING then
+        SoundManager:Stop(player)
+    elseif newSub == EDAStateMachine.SUB_STATE.CRAWLING then
+        SoundManager:Play(player, "help_loop", true)
+    else
+        SoundManager:Stop(player)
+    end
 end)
 
 EDAStateMachine.OnPlayerSpawn(function(player, oldRagdoll)
     if IsValid(oldRagdoll) then
+        player.ragdoll = oldRagdoll -- SoundManager 的要求
+        SoundManager:Stop(player)
         if not ProxyManager.MoveProxies(oldRagdoll, player) then
             ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
         end

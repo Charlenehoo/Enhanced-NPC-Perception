@@ -1,3 +1,5 @@
+-- lua\modules\3rd_party\soundmanager.lua
+
 SoundManager = SoundManager or {}
 SoundManager.ActiveSounds = SoundManager.ActiveSounds or {}
 setmetatable(SoundManager.ActiveSounds, { __mode = "k" })
@@ -13,24 +15,24 @@ local timer = timer
 local hook = hook
 local file = file
 local SoundDuration = SoundDuration
-local math_Rand = math.Rand 
+local math_Rand = math.Rand
 local math_sin = math.sin
 
 local modelPatterns = {
-    {pattern = "female", folder = "Female/"},
-    {pattern = "alyx", folder = "Female/"},
-    {pattern = "mossman", folder = "Female/"},
-    {pattern = "choi", folder = "Female/"},
-    {pattern = "ada", folder = "Female/"},
-    {pattern = "hackclaw", folder = "Female/"},
-    {pattern = "combine", folder = "Combine/"},
-    {pattern = "police", folder = "Combine/"},
-    {pattern = "metrocop", folder = "Combine/"},
-    {pattern = "cp_", folder = "Combine/"},
+    { pattern = "female",   folder = "Female/" },
+    { pattern = "alyx",     folder = "Female/" },
+    { pattern = "mossman",  folder = "Female/" },
+    { pattern = "choi",     folder = "Female/" },
+    { pattern = "ada",      folder = "Female/" },
+    { pattern = "hackclaw", folder = "Female/" },
+    { pattern = "combine",  folder = "Combine/" },
+    { pattern = "police",   folder = "Combine/" },
+    { pattern = "metrocop", folder = "Combine/" },
+    { pattern = "cp_",      folder = "Combine/" },
 }
 
 local REACTION_CONFIG = {
-    ["burn"]   = { minWait = 0.0, maxWait = 0.1, volume = 1.1, level = 85, attn = 2.0 }, 
+    ["burn"]   = { minWait = 0.0, maxWait = 0.1, volume = 1.1, level = 85, attn = 2.0 },
     ["bullet"] = { minWait = 0.4, maxWait = 1.0, volume = 0.95, level = 80, attn = 1.5 },
     ["flying"] = { minWait = 0.05, maxWait = 0.2, volume = 0.9, level = 85, attn = 2.5 },
     ["death"]  = { minWait = 0.0, maxWait = 0.0, volume = 0.75, level = 85, attn = 1.8 },
@@ -59,7 +61,7 @@ function SoundManager:FindSounds(ent, reactionType)
 
     local path = "SFX/" .. gender .. reactionType .. "/"
     local files = file.Find("sound/" .. path .. "*", "GAME")
-    
+
     if (not files or #files == 0) and gender ~= "Male/" then
         path = "SFX/Male/" .. reactionType .. "/"
         files = file.Find("sound/" .. path .. "*", "GAME")
@@ -74,9 +76,14 @@ function SoundManager:Play(ent, reactionType, isLooped)
 
     if not self.ActiveSounds[ent] then
         self.ActiveSounds[ent] = {
-            CurrentType = "", IsLooped = false, Patch = nil,
-            NextPlayTime = 0, LastFile = "", FadingOut = false,
-            TalkEndTime = 0, BaseVolume = 0,
+            CurrentType = "",
+            IsLooped = false,
+            Patch = nil,
+            NextPlayTime = 0,
+            LastFile = "",
+            FadingOut = false,
+            TalkEndTime = 0,
+            BaseVolume = 0,
             NoiseOffset = math.Rand(0, 100)
         }
     end
@@ -85,7 +92,7 @@ function SoundManager:Play(ent, reactionType, isLooped)
     if data.CurrentType ~= reactionType then
         SafeStopPatch(data.Patch)
         data.Patch = nil
-        data.NextPlayTime = 0 
+        data.NextPlayTime = 0
         data.TalkEndTime = 0
     end
 
@@ -121,17 +128,17 @@ function SoundManager:ExecutePlay(ent, reactionType)
     SafeStopPatch(data.Patch)
     local success, patch = pcall(CreateSound, ent, fullPath)
     if not success or not patch then return end
-    
+
     data.Patch = patch
     patch:SetSoundLevel(cfg.level)
     patch:PlayEx(cfg.volume, math.random(95, 105))
 
     local duration = SoundDuration(fullPath) or 1.0
     if duration <= 0 then duration = 1.0 end
-    
+
     data.TalkEndTime = CurTime() + duration
-    data.BaseVolume = cfg.volume 
-    
+    data.BaseVolume = cfg.volume
+
     data.NextPlayTime = CurTime() + duration + math.Rand(cfg.minWait, cfg.maxWait)
 end
 
@@ -143,16 +150,16 @@ function SoundManager:Stop(ent, fadeTime)
     data.IsLooped = false
     data.FadingOut = true
     data.TalkEndTime = 0
-    
+
     if RagdollFaceAnimator and RagdollFaceAnimator.LipsSyncs then
         RagdollFaceAnimator:LipsSyncs(ent, 0)
     end
-    
+
     local patch = data.Patch
     if patch then
         if patch.FadeOut then patch:FadeOut(fadeTime or 0.2) else patch:Stop() end
     end
-    
+
     timer.Simple((fadeTime or 0.2) + 0.1, function()
         if IsValid(ent) and SoundManager.ActiveSounds[ent] and SoundManager.ActiveSounds[ent].FadingOut then
             SoundManager.ActiveSounds[ent] = nil
@@ -164,29 +171,28 @@ local nextThink = 0
 hook.Add("Think", "SoundManager_LoopSystem", function()
     local ct = CurTime()
     if ct < nextThink then return end
-    
-    nextThink = ct + 0.05 
+
+    nextThink = ct + 0.05
 
     for ent, data in pairs(SoundManager.ActiveSounds) do
-        if not IsValid(ent) then 
+        if not IsValid(ent) then
             SafeStopPatch(data.Patch)
-            SoundManager.ActiveSounds[ent] = nil 
-            continue 
+            SoundManager.ActiveSounds[ent] = nil
+            continue
         end
 
         if not data.NoiseOffset then data.NoiseOffset = math.Rand(0, 100) end
 
         if RagdollFaceAnimator and RagdollFaceAnimator.LipsSyncs then
             if ct < data.TalkEndTime and not data.FadingOut then
-                
                 local jitter = math_Rand(0.4, 1.0)
-                
+
                 local swell = math_sin(ct * 5 + data.NoiseOffset) * 0.1
                 local simulatedVolume = (data.BaseVolume * jitter) + swell
-                
+
                 if simulatedVolume > 1 then simulatedVolume = 1 end
                 if simulatedVolume < 0 then simulatedVolume = 0 end
-                
+
                 RagdollFaceAnimator:LipsSyncs(ent, simulatedVolume)
             else
                 RagdollFaceAnimator:LipsSyncs(ent, 0.0)

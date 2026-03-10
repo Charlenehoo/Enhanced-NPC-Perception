@@ -7,6 +7,7 @@ if SERVER then
     include("modules/ProxyManager/Core/util.lua")
     include("modules/ProxyManager/proxy_sync.lua")
     include("modules/ProxyManager/hooks.lua")
+    include("modules/3rd_party/soundmanager.lua")
     include("modules/eda_state_machine.lua")
     include("modules/player_proxy.lua")
     include("modules/sound_relay.lua")
