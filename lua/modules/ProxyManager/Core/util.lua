@@ -6,9 +6,12 @@ local REMOVE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX = ProxyManager.REMOVE_PROXI
 local IsValid = IsValid
 
 function ProxyManager.CheckOrphanProxy(proxy)
-    if not IsValid(proxy) then return end
-    if IsValid(proxy.victim) and IsValid(proxy.attacker) then return end
+    assert(IsValid(proxy), "Proxy entity is invalid in CheckOrphanProxy") -- 代理无效则崩溃
+    if IsValid(proxy.victim) and IsValid(proxy.attacker) then
+        return false                                                      -- 正常，不移除
+    end
     ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)
+    return true -- 已移除，调用者应跳过本次迭代
 end
 
 function ProxyManager.CreateProxiesForVictimByClass(victim, classNamePattern)

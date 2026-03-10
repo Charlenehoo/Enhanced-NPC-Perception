@@ -29,14 +29,16 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     end
 
     for attacker, proxy in attackerProxyMapView.GetIterator() do
-        -- 安全说明：此循环遍历 attackerProxyMapView（键为 attacker，值为 proxy）。
-        -- 循环体内调用 ProxyManager.CheckOrphanProxy(proxy) 检查代理是否孤儿。
-        -- 若代理无效，CheckOrphanProxy 会调用 ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)，
-        -- 该函数从内部表 _attackersByVictim[victim] 中移除键 attacker，即当前迭代的键。
-        -- 在 Lua 的 next/pairs 遍历中，删除当前迭代的键是安全的，不会导致跳过或重复。
-        -- 警告：请勿在此循环中删除任何其他键（非当前 attacker），否则可能破坏迭代器状态。
-        -- 若将来需要删除其他键，请改用“先收集键，后删除”模式。
-        ProxyManager.CheckOrphanProxy(proxy)
+        if ProxyManager.CheckOrphanProxy(proxy) then
+            -- 安全说明：此循环遍历 attackerProxyMapView（键为 attacker，值为 proxy）。
+            -- 循环体内调用 ProxyManager.CheckOrphanProxy(proxy) 检查代理是否孤儿。
+            -- 若代理无效，CheckOrphanProxy 会调用 ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)，
+            -- 该函数从内部表 _attackersByVictim[victim] 中移除键 attacker，即当前迭代的键。
+            -- 在 Lua 的 next/pairs 遍历中，删除当前迭代的键是安全的，不会导致跳过或重复。
+            -- 警告：请勿在此循环中删除任何其他键（非当前 attacker），否则可能破坏迭代器状态。
+            -- 若将来需要删除其他键，请改用“先收集键，后删除”模式。
+            continue -- Gmod 支持此关键字
+        end
 
         local attackerShootPos = attacker:GetShootPos()
         local distance = attackerShootPos:Distance(targetBonePos)
