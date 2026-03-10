@@ -16,18 +16,18 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
 
     ProxyManager.InitializeBoneCache(victim)
+
+    local targetBonePos
     local boneCache = ProxyManager.boneCacheTable[victim]
-    -- 这里不加下面注释掉的检查是因为 boneCache or table.IsEmpty(boneCache) 是核心功能失效，
-    -- 与其隐藏错误，不如 fail fast，而且 lua 虚拟机可以收集重复报错，而不是控制台刷屏
-    -- if not boneCache or table.IsEmpty(boneCache) then
-    --     return
-    -- end
+    if boneCache and #boneCache > 0 then
+        local loopCount = ProxyManager.loopCountTable[victim] or 0 -- 0 ~ #boneCache
+        local boneIndex = loopCount % #boneCache + 1               -- 1 ~ #boneCache
+        ProxyManager.loopCountTable[victim] = boneIndex
+        targetBonePos, _ = victim:GetBonePosition(boneIndex)       -- https://wiki.facepunch.com/gmod/Entity:GetBonePosition
+    else
+        targetBonePos = victim:EyePos()                            -- 降级
+    end
 
-    local loopCount = ProxyManager.loopCountTable[victim] or 0 -- 0 ~ #boneCache
-    local boneIndex = loopCount % #boneCache + 1               -- 1 ~ #boneCache
-    ProxyManager.loopCountTable[victim] = boneIndex
-
-    local targetBonePos, _ = victim:GetBonePosition(boneIndex) -- https://wiki.facepunch.com/gmod/Entity:GetBonePosition
     for attacker, proxy in attackerProxyMapView.GetIterator() do
         -- 安全说明：此循环遍历 attackerProxyMapView（键为 attacker，值为 proxy）。
         -- 循环体内调用 ProxyManager.CheckOrphanProxy(proxy) 检查代理是否孤儿。
