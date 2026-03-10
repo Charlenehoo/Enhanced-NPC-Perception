@@ -6,6 +6,8 @@ local RAGDOLL_REMOVE_DELAY = 4
 local IsValid = IsValid
 local player_GetHumans = player.GetHumans
 
+-- 实验性支持 EDA MOD，此模块未完成，调式中
+
 local MAIN_STATE = {
     UNINTERVENED = "UNINTERVENED", -- 未介入
     DIRECT_DEATH = "DIRECT_DEATH", -- 直接死亡
@@ -137,7 +139,10 @@ hook.Add("PlayerDeathThink", "ENP_PlayerDeathThink", function(player)
             ProxyManager.MoveProxies(player, ragdoll)
             ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
         elseif currentMainState == MAIN_STATE.CRAWLING then
-            ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
+            local wasCancelled = ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
+            if not wasCancelled then
+                ProxyManager.CreateProxiesForVictimByClass(ragdoll)
+            end
         elseif currentMainState == MAIN_STATE.FINAL_DEATH then
             ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
         end
