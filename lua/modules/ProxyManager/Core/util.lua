@@ -49,7 +49,7 @@ function ProxyManager.CancelCreateProxiesDelayed(victim)
 end
 
 function ProxyManager.CancelRemoveProxiesDelayed(victim)
-    if not IsValid(victim) then return end
+    if not IsValid(victim) then return false end
 
     local timerIdentifier = GetRemoveProxiesDelayedTimerIdentifier(victim)
     if timer.Exists(timerIdentifier) then
