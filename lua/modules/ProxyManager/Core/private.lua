@@ -241,6 +241,11 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
     return true
 end
 
+local function _IsVictimImpl(entity)
+    if not entity then return false end
+    return _attackersByVictim[entity] ~= nil
+end
+
 function ProxyManager._private._CreateProxy(victim, attacker) return _CreateProxyImpl(victim, attacker) end
 
 function ProxyManager._private._RemoveProxy(victim, attacker) return _RemoveProxyImpl(victim, attacker) end
@@ -254,3 +259,5 @@ function ProxyManager._private._IterateVictimsWithAttackerProxyMapView()
 end
 
 function ProxyManager._private._MoveProxies(oldVictim, newVictim) return _MoveProxiesImpl(oldVictim, newVictim) end
+
+function ProxyManager._private._IsVictim(entity) return _IsVictimImpl(entity) end

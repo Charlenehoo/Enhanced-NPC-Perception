@@ -3,8 +3,10 @@
 local ProxyManager = ProxyManager
 local PROXY_CLASS = ProxyManager.PROXY_CLASS
 
+local IsValid = IsValid
+
 -- 辅助函数：获取受害者对应的所有代理实体
-local function GetProxiesForVictim(victim)
+local function GetProxiesByVictim(victim)
     local proxies = {}
     local view = ProxyManager.GetAttackerProxyMapView(victim)
     if view then
@@ -15,29 +17,31 @@ local function GetProxiesForVictim(victim)
     return proxies
 end
 
+local function Deserialize(data)
+    return data.SoundName, data.SoundLevel, data.Pitch, 0,
+        data.Channel, data.Flags, data.DSP
+end
+
 hook.Add("EntityEmitSound", "SNT_EntityEmitSound", function(data)
     local entity = data.Entity
     if not IsValid(entity) or entity:GetClass() == PROXY_CLASS then
-        return     -- 忽略代理自身发出的声音
+        return -- 忽略代理自身发出的声音
     end
 
-    -- 尝试找到该实体作为受害者（或受害者持有物）对应的代理
-    -- 注意：遍历所有受害者可能效率较低，但受害者数量通常有限
-    for victim, _ in ProxyManager.IterateVictimsWithAttackerProxyMapView() do
-        if entity == victim or entity:GetOwner() == victim then
-            local proxies = GetProxiesForVictim(victim)
-            for _, proxy in ipairs(proxies) do
-                -- 原样传递声音参数
-                proxy:EmitSound(
-                    data.SoundName,
-                    data.SoundLevel,
-                    data.Pitch,
-                    data.Channel or 0,
-                    data.Flags or 0,
-                    data.DSP or 0
-                )
-            end
-            return     -- 最多匹配一个受害者，找到后立即返回
-        end
+    local victim
+    if ProxyManager.IsVictim(entity) then
+        victim = entity
+    elseif ProxyManager.IsVictim(entity:GetOwner()) then
+        victim = entity:GetOwner()
+    else
+        return
+    end
+
+    local proxies = GetProxiesByVictim(victim)
+    for _, proxy in ipairs(proxies) do
+        -- 原样传递声音参数
+        proxy:EmitSound(
+            Deserialize(data)
+        )
     end
 end)

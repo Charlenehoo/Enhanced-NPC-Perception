@@ -21,6 +21,8 @@ function ProxyManager.MoveProxies(oldVictim, newVictim) -- 须带返回值
         newVictim)
 end
 
+function ProxyManager.IsVictim(entity) return ProxyManager._private._IsVictim(entity) end
+
 function ProxyManager.RemoveAllProxiesByVictim(victim)
     if not victim then return end
     local view = ProxyManager.GetAttackerProxyMapView(victim) -- 只读视图
