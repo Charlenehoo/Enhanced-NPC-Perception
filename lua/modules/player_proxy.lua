@@ -8,7 +8,7 @@ local RAGDOLL_REMOVE_DELAY = 4
 local IsValid = IsValid
 local player_GetHumans = player.GetHumans
 
-EDAStateMachine = EDAStateMachine or {}
+local EDAStateMachine = EDAStateMachine
 
 EDAStateMachine.OnMainStateChange(function(player, ragdoll, oldMain, newMain)
     if newMain == EDAStateMachine.MAIN_STATE.DEATH_ANIM then
@@ -56,7 +56,9 @@ end
 hook.Add("OnEntityCreated", "ENP_OnEntityCreated", function(entity)
     if entity:IsNPC() and entity:GetClass():find(DEFAULT_ATTACKER_CLASS_PREFIX, 1, true) then -- 改为遍历所有 Victim
         for _, player in ipairs(player_GetHumans()) do
-            ProxyManager.CreateProxy(player, entity)
+            if player:Alive() then
+                ProxyManager.CreateProxy(player, entity)
+            end
         end
     end
 end)
