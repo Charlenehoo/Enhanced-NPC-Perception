@@ -27,7 +27,7 @@ EDAStateMachine.MAIN_STATE = {
     UNINTERVENED = "Unintervened",
     DIRECT_DEATH = "DirectDeath",
     DEATH_ANIM   = "DeathAnim",
-    CRAWLING     = "Crawling",
+    STRUGGLE     = "Struggle",
     FINAL_DEATH  = "FinalDeath",
 }
 
@@ -170,13 +170,13 @@ function EDAStateMachine.Update(player)
         if currentHp_d <= 0 or currentHp_c <= 0 then
             currentMainState = EDAStateMachine.MAIN_STATE.FINAL_DEATH
         else
-            currentMainState = EDAStateMachine.MAIN_STATE.CRAWLING
+            currentMainState = EDAStateMachine.MAIN_STATE.STRUGGLE
         end
     end
 
-    -- 计算子状态（仅当主状态为 CRAWLING 时）
+    -- 计算子状态（仅当主状态为 STRUGGLE 时）
     local currentSubState = EDAStateMachine.SUB_STATE.NONE
-    if currentMainState == EDAStateMachine.MAIN_STATE.CRAWLING then
+    if currentMainState == EDAStateMachine.MAIN_STATE.STRUGGLE then
         if fields.IsWrithing then
             currentSubState = EDAStateMachine.SUB_STATE.WRITHING
         elseif fields.IsTwitching then

@@ -14,7 +14,7 @@ EDAStateMachine.OnMainStateChange(function(player, ragdoll, oldMain, newMain)
     if newMain == EDAStateMachine.MAIN_STATE.DEATH_ANIM then
         ProxyManager.MoveProxies(player, ragdoll)
         ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
-    elseif newMain == EDAStateMachine.MAIN_STATE.CRAWLING then
+    elseif newMain == EDAStateMachine.MAIN_STATE.STRUGGLE then
         local wasCancelled = ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
         if not wasCancelled then
             ProxyManager.CreateProxiesForVictimByClass(ragdoll)
