@@ -5,6 +5,8 @@ setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
 local COMBINE_RANGE = ProxyManager.ATTACKER_RANGE
 local COMBINE_SUPPRESSION_TIME = ProxyManager.ATTACKER_SUPPRESSION_TIME
+local SOUND_WINDOW = 0.5 -- 临时放这里
+local FACE_COOLDOWN = 8
 local PROXY_OFFSET = ProxyManager.PROXY_OFFSET
 local MASK_SHOT_HULL = MASK_SHOT_HULL
 
@@ -76,6 +78,19 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         proxy:SetPos(targetPos - direction * PROXY_OFFSET)
         proxy:SetAngles(direction:Angle())
+
+        -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
+        local lastSound = proxy.lastSoundTime
+        if lastSound and (currentTime - lastSound) <= SOUND_WINDOW then
+            local lastFace = proxy.lastFaceTime or 0
+            if currentTime - lastFace >= FACE_COOLDOWN then
+                if attacker:GetCurrentSchedule() ~= SCHED_DIE then
+                    attacker:SetEnemy(proxy)
+                    attacker:SetSchedule(SCHED_COMBAT_FACE)
+                    proxy.lastFaceTime = currentTime
+                end
+            end
+        end
     end
 end
 

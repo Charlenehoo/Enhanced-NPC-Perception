@@ -18,12 +18,8 @@
 
 local ProxyManager = ProxyManager
 
-local PROXY_CLASS = ProxyManager.PROXY_CLASS
-
-local FACE_COOLDOWN = 0.5
-local DEBUG = true -- 大量调试输出，单独控制
-
 local IsValid = IsValid
+local CurTime = CurTime
 
 local function GetProxiesByVictim(victim)
     local proxies = {}
@@ -52,19 +48,6 @@ hook.Add("EntityEmitSound", "SNT_EntityEmitSound", function(data)
     local proxies = GetProxiesByVictim(victim)
 
     for _, proxy in ipairs(proxies) do
-        local attacker = proxy.attacker
-        if not IsValid(attacker) or not attacker:IsNPC() then
-            continue -- Gmod 支持此关键字
-        end
-        local nextFaceTime = proxy.nextFaceTime or 0
-        local curTime = CurTime()
-        if curTime < nextFaceTime then
-            continue -- Gmod 支持此关键字
-        end
-        if attacker:GetCurrentSchedule() ~= SCHED_DIE then
-            attacker:SetEnemy(proxy)
-            attacker:SetSchedule(SCHED_COMBAT_FACE)
-            proxy.nextFaceTime = curTime + FACE_COOLDOWN
-        end
+        proxy.lastSoundTime = CurTime()
     end
 end)
