@@ -47,10 +47,6 @@ local function PrintRagdollInfo(stateName, ragdoll)
     print("===============================")
 end
 
-local lastHp_c
-local lastHp_d
-local lastState
-
 hook.Add("PlayerSpawn", "ENP_PlayerSpawn", function(player)
     player.lastHp_c = nil
     player.lastHp_d = nil
