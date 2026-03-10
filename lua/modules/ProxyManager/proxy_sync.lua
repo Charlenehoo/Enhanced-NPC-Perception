@@ -44,8 +44,6 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         local isVisible = attacker:IsLineOfSightClear(victim)
 
-        attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] = attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] or {} --
-
         if isVisible then
             proxy.lastSightTime = currentTime
         end
