@@ -6,7 +6,6 @@ setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 local COMBINE_RANGE = ProxyManager.ATTACKER_RANGE
 local COMBINE_SUPPRESSION_TIME = ProxyManager.ATTACKER_SUPPRESSION_TIME
 local PROXY_OFFSET = ProxyManager.PROXY_OFFSET
-local ATTACKER_LAST_SIGHTING_TIME_KEY = ProxyManager.ATTACKER_LAST_SIGHTING_TIME_KEY
 local MASK_SHOT_HULL = MASK_SHOT_HULL
 
 local IsValid = IsValid
