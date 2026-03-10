@@ -48,14 +48,10 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] = attacker[ATTACKER_LAST_SIGHTING_TIME_KEY] or {} --
 
         if isVisible then
-            attacker[ATTACKER_LAST_SIGHTING_TIME_KEY][victim] =
-            currentTime                                                     -- 此属性由 attacker 持有更好，避免弱引用问题，2026-3-9 实际游玩发现由 Victim 持有好，方便转移给 Ragdoll
+            proxy.lastSightTime = currentTime
         end
 
-        -- 初始化时，如果 victim 被玩家看见，lastSightTime = currentTime，符合设计
-        -- 如果没有被玩家看见，lastSightTime = 0，是一个极早的时间，isSuppressionExpired 为 false，也符合设计
-        local lastSightTime = attacker[ATTACKER_LAST_SIGHTING_TIME_KEY][victim] or 0
-        local isSuppressionExpired = (currentTime - lastSightTime) > COMBINE_SUPPRESSION_TIME
+        local isSuppressionExpired = (currentTime - proxy.lastSightTime) > COMBINE_SUPPRESSION_TIME
 
         local shouldSuppress = not isVisible and not isSuppressionExpired
         local shouldCloseSuppress = shouldSuppress and not isRanged

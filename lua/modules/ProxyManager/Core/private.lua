@@ -110,6 +110,8 @@ local function _CreateProxyImpl(victim, attacker)
 
     newProxy.victim = victim
     newProxy.attacker = attacker
+    newProxy.lastSightTime = 0
+
     _attackersByVictim[victim][attacker] = newProxy
     _victimsByAttacker[attacker][victim] = newProxy
 
