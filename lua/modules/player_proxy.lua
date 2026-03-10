@@ -77,6 +77,11 @@ hook.Add("OnEntityCreated", "ENP_OnEntityCreated", function(entity)
                 ProxyManager.CreateProxy(player, entity)
             end
         end
+        for victim in ProxyManager.IterateVictims() do
+            if IsValid(victim) then
+                ProxyManager.CreateProxy(victim, entity)
+            end
+        end
     end
 end)
 

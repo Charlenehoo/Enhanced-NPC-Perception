@@ -168,6 +168,15 @@ local function _IterateVictimsWithAttackerProxyMapViewImpl()
     end
 end
 
+local function _IterateVictimsImpl()
+    local nextKey, state = next, _attackersByVictim -- state 为私表 _attackersByVictim
+    local key = nil
+    return function()
+        key = nextKey(state, key) -- 获取下一个键（受害者）
+        return key                -- 只返回受害者，不返回其值
+    end
+end
+
 local function _MoveProxiesImpl(oldVictim, newVictim)
     -- 1. 参数有效性检查
     if not IsValid(oldVictim) or not IsValid(newVictim) then return false end
@@ -257,6 +266,8 @@ function ProxyManager._private._GetVictimProxyMapView(attacker) return _GetVicti
 function ProxyManager._private._IterateVictimsWithAttackerProxyMapView()
     return _IterateVictimsWithAttackerProxyMapViewImpl()
 end
+
+function ProxyManager._private._IterateVictims() return _IterateVictimsImpl() end
 
 function ProxyManager._private._MoveProxies(oldVictim, newVictim) return _MoveProxiesImpl(oldVictim, newVictim) end
 
