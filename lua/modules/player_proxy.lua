@@ -61,10 +61,4 @@ hook.Add("OnEntityCreated", "ENP_OnEntityCreated", function(entity)
     end
 end)
 
--- hook.Add("EntityRemoved", "ENP_EntityRemoved", function(entity)
---     if ProxyManager.IsAttacker(entity) then
---         ProxyManager.RemoveAllProxiesByAttacker(entity)
---     end
--- end)
-
 print("[SNT] Player Proxy loaded.")
