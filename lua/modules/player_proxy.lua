@@ -15,6 +15,7 @@ EDAStateMachine.OnMainStateChange(function(player, ragdoll, oldMain, newMain, ol
     if newMain == EDAStateMachine.MAIN_STATE.DEATH_ANIM then
         ProxyManager.MoveProxies(player, ragdoll)
         ProxyManager.RemoveProxiesDelayed(ragdoll, RAGDOLL_REMOVE_DELAY)
+        ModToggleManager.DisableFootStep()
     elseif newMain == EDAStateMachine.MAIN_STATE.STRUGGLE then
         local wasCancelled = ProxyManager.CancelRemoveProxiesDelayed(ragdoll)
         if not wasCancelled then
@@ -44,6 +45,8 @@ EDAStateMachine.OnSubStateChange(function(player, ragdoll, oldSub, newSub, mainS
 end)
 
 EDAStateMachine.OnPlayerSpawn(function(player, oldRagdoll)
+    ModToggleManager.EnableFootStep()
+
     if IsValid(oldRagdoll) then
         player.ragdoll = oldRagdoll -- SoundManager 的要求
         SoundManager:Stop(player)
