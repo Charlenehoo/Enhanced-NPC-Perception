@@ -29,7 +29,8 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     end
 
     for attacker, proxy in attackerProxyMapView.GetIterator() do
-        if ProxyManager.CheckOrphanProxy(proxy) then
+        local isOrphan = ProxyManager.CheckOrphanProxy(proxy)
+        if isOrphan then
             -- 安全说明：此循环遍历 attackerProxyMapView（键为 attacker，值为 proxy）。
             -- 循环体内调用 ProxyManager.CheckOrphanProxy(proxy) 检查代理是否孤儿。
             -- 若代理无效，CheckOrphanProxy 会调用 ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)，
