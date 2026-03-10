@@ -3,16 +3,16 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
-local COMBINE_RANGE = ProxyManager.ATTACKER_RANGE
-local COMBINE_SUPPRESSION_TIME = ProxyManager.ATTACKER_SUPPRESSION_TIME
-local SOUND_WINDOW = 0.5 -- 临时放这里
-local FACE_COOLDOWN = 8
-local PROXY_OFFSET = ProxyManager.PROXY_OFFSET
-local MASK_SHOT_HULL = MASK_SHOT_HULL
+local COMBINE_RANGE         = ProxyManager.ATTACKER_RANGE
+local SIGHT_MEMORY_DURATION = 4
+local SOUND_MEMORY_DURATION = 4 -- 临时放这里
+local FACE_COOLDOWN         = 8
+local PROXY_OFFSET          = ProxyManager.PROXY_OFFSET
+local MASK_SHOT_HULL        = MASK_SHOT_HULL
 
-local IsValid = IsValid
-local CurTime = CurTime
-local util_TraceLine = util.TraceLine
+local IsValid               = IsValid
+local CurTime               = CurTime
+local util_TraceLine        = util.TraceLine
 
 function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
@@ -43,6 +43,25 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             continue -- Gmod 支持此关键字
         end
 
+        -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
+        local lastSound      = proxy.lastSoundTime
+        local hasRecentSound = false
+        if lastSound and (currentTime - lastSound) <= SOUND_MEMORY_DURATION then
+            hasRecentSound = true
+
+            local lastFace = proxy.lastFaceTime or 0
+            if currentTime - lastFace >= FACE_COOLDOWN then
+                local curSched = attacker:GetCurrentSchedule()
+                if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
+                    if not IsValid(attacker:GetEnemy()) then
+                        attacker:SetEnemy(proxy)
+                        attacker:SetSchedule(SCHED_COMBAT_FACE)
+                        proxy.lastFaceTime = currentTime
+                    end
+                end
+            end
+        end
+
         local attackerShootPos = attacker:GetShootPos()
         local distance = attackerShootPos:Distance(targetBonePos)
         local isRanged = distance > COMBINE_RANGE
@@ -53,13 +72,13 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             proxy.lastSightTime = currentTime
         end
 
-        local isSuppressionExpired = (currentTime - proxy.lastSightTime) > COMBINE_SUPPRESSION_TIME
-
-        local shouldSuppress = not isVisible and not isSuppressionExpired
-        local shouldCloseSuppress = shouldSuppress and not isRanged
+        local hasRecentSight       = (currentTime - proxy.lastSightTime) <= SIGHT_MEMORY_DURATION
+        local hasRecentInfo        = hasRecentSound or hasRecentSight
+        local shouldSuppress       = not isVisible and not hasRecentInfo
+        local shouldCloseSuppress  = shouldSuppress and not isRanged
         local shouldRangedSuppress = shouldSuppress and isRanged
 
-        local direction = (targetBonePos - attackerShootPos):GetNormalized()
+        local direction            = (targetBonePos - attackerShootPos):GetNormalized()
 
         local targetPos
         if shouldCloseSuppress then
@@ -78,19 +97,6 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         proxy:SetPos(targetPos - direction * PROXY_OFFSET)
         proxy:SetAngles(direction:Angle())
-
-        -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
-        local lastSound = proxy.lastSoundTime
-        if lastSound and (currentTime - lastSound) <= SOUND_WINDOW then
-            local lastFace = proxy.lastFaceTime or 0
-            if currentTime - lastFace >= FACE_COOLDOWN then
-                if attacker:GetCurrentSchedule() ~= SCHED_DIE then
-                    attacker:SetEnemy(proxy)
-                    attacker:SetSchedule(SCHED_COMBAT_FACE)
-                    proxy.lastFaceTime = currentTime
-                end
-            end
-        end
     end
 end
 
