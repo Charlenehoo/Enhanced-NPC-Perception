@@ -150,31 +150,41 @@ function EDAStateMachine.Update(player)
         end
     end
 
+    -- 计算主状态
+    -- local currentMainState
+    -- if not currentHp_d then
+    --     currentMainState = EDAStateMachine.MAIN_STATE.UNINTERVENED
+    -- elseif not currentHp_c then
+    --     if currentHp_d <= 0 then
+    --         currentMainState = EDAStateMachine.MAIN_STATE.DIRECT_DEATH
+    --     else
+    --         currentMainState = EDAStateMachine.MAIN_STATE.DEATH_ANIM
+    --     end
+    -- else
+    --     if currentHp_d <= 0 or currentHp_c <= 0 then
+    --         currentMainState = EDAStateMachine.MAIN_STATE.FINAL_DEATH
+    --     else
+    --         currentMainState = EDAStateMachine.MAIN_STATE.STRUGGLE
+    --     end
+    -- end
+
     record.lastHp_c = currentHp_c
     record.lastHp_d = currentHp_d
-    record.lastIsWrithing = fields.IsWrithing
-    record.lastIsTwitching = fields.IsTwitching
-    record.lastIsReviving = fields.IsReviving
-
-    -- 计算主状态
     local currentMainState
-    if not currentHp_d then
-        currentMainState = EDAStateMachine.MAIN_STATE.UNINTERVENED
-    elseif not currentHp_c then
-        if currentHp_d <= 0 then
-            currentMainState = EDAStateMachine.MAIN_STATE.DIRECT_DEATH
-        else
-            currentMainState = EDAStateMachine.MAIN_STATE.DEATH_ANIM
-        end
+    if currentHp_c ~= nil then
+        currentMainState = (currentHp_c <= 0) and EDAStateMachine.MAIN_STATE.FINAL_DEATH or
+            EDAStateMachine.MAIN_STATE.STRUGGLE
+    elseif currentHp_d ~= nil then
+        currentMainState = (currentHp_d <= 0) and EDAStateMachine.MAIN_STATE.DIRECT_DEATH or
+            EDAStateMachine.MAIN_STATE.DEATH_ANIM
     else
-        if currentHp_d <= 0 or currentHp_c <= 0 then
-            currentMainState = EDAStateMachine.MAIN_STATE.FINAL_DEATH
-        else
-            currentMainState = EDAStateMachine.MAIN_STATE.STRUGGLE
-        end
+        currentMainState = EDAStateMachine.MAIN_STATE.UNINTERVENED
     end
 
     -- 计算子状态（仅当主状态为 STRUGGLE 时）
+    record.lastIsWrithing = fields.IsWrithing
+    record.lastIsTwitching = fields.IsTwitching
+    record.lastIsReviving = fields.IsReviving
     local currentSubState = EDAStateMachine.SUB_STATE.NONE
     if currentMainState == EDAStateMachine.MAIN_STATE.STRUGGLE then
         if fields.IsWrithing then
