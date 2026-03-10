@@ -1,12 +1,34 @@
 -- lua/modules/eda_state_machine.lua
 EDAStateMachine = EDAStateMachine or {}
 
+--[[
+    EDA State Machine – 封装对 Enhanced Death Animations (EDA) MOD 的依赖
+
+    本模块负责读取 EDA MOD 在玩家和布娃娃实体上设置的自定义字段，
+    并根据这些字段计算出玩家当前所处的死亡状态（主状态与子状态），
+    通过回调通知外部模块（如 player_proxy.lua）执行相应逻辑。
+
+    所有“魔法字段”均来自 EDA MOD，含义如下：
+
+    - player.ORag : 玩家死亡后对应的布娃娃实体（EDA 在玩家死亡时设置）。
+    - ragdoll.Hp_c : 爬行/挣扎/复活动画中的“生命值”，当该值 ≤ 0 时进入最终死亡。
+    - ragdoll.Hp_d : 死亡动画中的“生命值”，当该值 ≤ 0 时结束死亡动画，可能进入爬行。
+    - ragdoll.IsWrithing  : 布尔值，表示布娃娃正在播放“挣扎”动画（子状态）。
+    - ragdoll.IsTwitching  : 布尔值，表示布娃娃正在播放“抽搐”动画（子状态）。
+    - ragdoll.IsReviving   : 布尔值，表示布娃娃正在被复活（子状态）。
+
+    若将来需要替换或移除 EDA MOD，只需修改本文件底部的两个内部函数：
+        - GetRagdoll(player)      : 返回玩家对应的布娃娃实体。
+        - GetRagdollFields(ragdoll): 返回包含上述字段的表。
+    其余逻辑（状态计算、回调触发）无需改动。
+]]
+
 EDAStateMachine.MAIN_STATE = {
-    UNINTERVENED = "UNINTERVENED",
-    DIRECT_DEATH = "DIRECT_DEATH",
-    DEATH_ANIM   = "DEATH_ANIM",
-    CRAWLING     = "CRAWLING",
-    FINAL_DEATH  = "FINAL_DEATH",
+    UNINTERVENED = "Unintervened",
+    DIRECT_DEATH = "DirectDeath",
+    DEATH_ANIM   = "DeathAnim",
+    CRAWLING     = "Crawling",
+    FINAL_DEATH  = "FinalDeath",
 }
 
 EDAStateMachine.SUB_STATE = {
