@@ -37,17 +37,6 @@ local function GetRemoveProxiesDelayedTimerIdentifier(victim)
     return string.format("%s%d", REMOVE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX, victim:EntIndex())
 end
 
-function ProxyManager.CancelRemoveProxiesDelayed(victim)
-    if not IsValid(victim) then return end
-
-    local timerIdentifier = GetRemoveProxiesDelayedTimerIdentifier(victim)
-    if timer.Exists(timerIdentifier) then
-        timer.Remove(timerIdentifier)
-        return true
-    end
-    return false
-end
-
 function ProxyManager.CancelCreateProxiesDelayed(victim)
     if not IsValid(victim) then return false end
 
@@ -59,13 +48,15 @@ function ProxyManager.CancelCreateProxiesDelayed(victim)
     return false
 end
 
-function ProxyManager.CreateProxiesDelayed(victim, delay)
-    ProxyManager.CancelRemoveProxiesDelayed(victim)
-    timer.Simple(delay, function()
-        if IsValid(victim) then
-            ProxyManager.CreateProxiesForVictimByClass(victim)
-        end
-    end)
+function ProxyManager.CancelRemoveProxiesDelayed(victim)
+    if not IsValid(victim) then return end
+
+    local timerIdentifier = GetRemoveProxiesDelayedTimerIdentifier(victim)
+    if timer.Exists(timerIdentifier) then
+        timer.Remove(timerIdentifier)
+        return true
+    end
+    return false
 end
 
 function ProxyManager.CreateProxiesDelayed(victim, delay)
