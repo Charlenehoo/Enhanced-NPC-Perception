@@ -17,6 +17,7 @@
 -- 虽然绕过了声音系统，但在当前环境下是稳定有效的解决方案。
 
 local ProxyManager = ProxyManager
+local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 
 local IsValid = IsValid
 local CurTime = CurTime
@@ -134,6 +135,6 @@ hook.Add("EntityEmitSound", "SNT_EntityEmitSound", function(data)
     local proxies = GetProxiesByVictim(victim)
 
     for _, proxy in ipairs(proxies) do
-        proxy.lastSoundTime = CurTime()
+        proxy[PROXY_FIELDS.LAST_SOUND_TIME] = CurTime()
     end
 end)

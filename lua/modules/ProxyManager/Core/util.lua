@@ -1,5 +1,6 @@
 -- lua\modules\ProxyManager\util.lua
 ProxyManager = ProxyManager or {}
+local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 local DEFAULT_ATTACKER_CLASS_PATTERN = ProxyManager.DEFAULT_ATTACKER_CLASS_PATTERN
 local CREATE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX = ProxyManager.CREATE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX
 local REMOVE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX = ProxyManager.REMOVE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX
@@ -8,10 +9,10 @@ local IsValid = IsValid
 
 function ProxyManager.CheckOrphanProxy(proxy)
     assert(IsValid(proxy), "Proxy entity is invalid in CheckOrphanProxy") -- 代理无效则崩溃
-    if IsValid(proxy.victim) and IsValid(proxy.attacker) then
+    if IsValid(proxy[PROXY_FIELDS.VICTIM]) and IsValid(proxy[PROXY_FIELDS.ATTACKER]) then
         return false                                                      -- 正常，不移除
     end
-    ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)
+    ProxyManager.RemoveProxy(proxy[PROXY_FIELDS.VICTIM], proxy[PROXY_FIELDS.ATTACKER])
     return true -- 已移除，调用者应跳过本次迭代
 end
 

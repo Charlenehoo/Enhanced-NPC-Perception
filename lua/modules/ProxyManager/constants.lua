@@ -1,6 +1,14 @@
 -- .\lua\modules\ProxyManager\constants.lua
 ProxyManager = ProxyManager or {}
 ProxyManager.PROXY_CLASS = "enp_proxy"
+ProxyManager.PROXY_FIELDS = {
+    VICTIM = "victim",
+    ATTACKER = "attacker",
+    LAST_SIGHT_TIME = "lastSightTime",
+    LAST_SOUND_TIME = "lastSoundTime",
+    LAST_FACE_TIME = "lastFaceTime",
+}
+
 ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX = "npc_combine"
 ProxyManager.DEFAULT_ATTACKER_CLASS_PATTERN = string.format("%s*", ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX)
 ProxyManager.REMOVE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX = "ENP_RemoveProxies_"

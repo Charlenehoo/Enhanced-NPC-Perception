@@ -53,6 +53,7 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
+local PROXY_FIELDS             = ProxyManager.PROXY_FIELDS
 local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
 local SIGHT_MEMORY_DURATION    = 4
 local SOUND_MEMORY_DURATION    = 4 -- 临时放这里
@@ -97,19 +98,19 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         -- proxy:SetModelScale(0.4)
 
         -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
-        local lastSound      = proxy.lastSoundTime
+        local lastSound      = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
         local hasRecentSound = false
         if lastSound and (currentTime - lastSound) <= SOUND_MEMORY_DURATION then
             hasRecentSound = true
 
-            local lastFace = proxy.lastFaceTime or 0
+            local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
             if currentTime - lastFace >= FACE_COOLDOWN then
                 local curSched = attacker:GetCurrentSchedule()
                 if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
                     if not IsValid(attacker:GetEnemy()) then
                         attacker:SetEnemy(proxy)
                         attacker:SetSchedule(SCHED_COMBAT_FACE)
-                        proxy.lastFaceTime = currentTime
+                        proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
                     end
                 end
             end
@@ -130,10 +131,10 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local isVisible = victimSideTraceResult.Entity == attacker
 
         if isVisible then
-            proxy.lastSightTime = currentTime
+            proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
 
-        local hasRecentSight       = (currentTime - proxy.lastSightTime) <= SIGHT_MEMORY_DURATION
+        local hasRecentSight       = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
         local hasRecentInfo        = hasRecentSound or hasRecentSight
         local shouldSuppress       = not isVisible and hasRecentInfo
         local shouldCloseSuppress  = shouldSuppress and not isRanged

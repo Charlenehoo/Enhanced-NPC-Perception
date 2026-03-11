@@ -2,6 +2,7 @@
 ProxyManager = ProxyManager or {}
 ProxyManager._private = ProxyManager._private or {}
 local PROXY_CLASS = ProxyManager.PROXY_CLASS
+local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 
 local IsValid = IsValid
 local table_IsEmpty = table.IsEmpty
@@ -108,9 +109,7 @@ local function _CreateProxyImpl(victim, attacker)
     local newProxy = ents.Create(PROXY_CLASS)
     if not IsValid(newProxy) then return end
 
-    newProxy.victim = victim
-    newProxy.attacker = attacker
-    newProxy.lastSightTime = 0
+    newProxy:Init(victim, attacker)
 
     _attackersByVictim[victim][attacker] = newProxy
     _victimsByAttacker[attacker][victim] = newProxy
@@ -220,7 +219,7 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
         -- 3.3 攻击者有效，处理代理
         if IsValid(proxy) then
             -- 代理有效：直接移动
-            proxy.victim = newVictim
+            proxy[PROXY_FIELDS.VICTIM] = newVictim
 
             -- 确保新受害者的正向映射表存在
             local newVictimMap = _attackersByVictim[newVictim]

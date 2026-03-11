@@ -1,4 +1,6 @@
 -- .\lua\entities\enp_proxy.lua
+local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
+
 AddCSLuaFile()
 ENT.Base = "base_ai"
 ENT.Type = "ai"
@@ -9,4 +11,12 @@ function ENT:Initialize() -- https://wiki.facepunch.com/gmod/ENTITY:Initialize
     self:SetModelScale(0.04)
     -- self:SetNoDraw(true)
     self:SetCollisionGroup(COLLISION_GROUP_NONE)
+end
+
+function ENT:Init(v, a)
+    self[PROXY_FIELDS.VICTIM] = v
+    self[PROXY_FIELDS.ATTACKER] = a
+    self[PROXY_FIELDS.LAST_SIGHT_TIME] = 0
+    self[PROXY_FIELDS.LAST_SOUND_TIME] = 0
+    self[PROXY_FIELDS.LAST_FACE_TIME] = 0
 end
