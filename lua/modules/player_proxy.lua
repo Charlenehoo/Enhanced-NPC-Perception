@@ -49,7 +49,7 @@ EDAStateMachine.OnPlayerSpawn(function(player, oldRagdoll)
 
     if IsValid(oldRagdoll) then
         player.ragdoll = oldRagdoll -- SoundManager 的要求
-        SoundManager:Stop(player)
+        SoundManager:Stop(player, 0)
         if not ProxyManager.MoveProxies(oldRagdoll, player) then
             ProxyManager.CreateProxiesDelayed(player, PLAYER_SPAWN_DELAY)
         end

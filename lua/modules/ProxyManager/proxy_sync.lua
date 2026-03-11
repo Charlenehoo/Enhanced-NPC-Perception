@@ -3,16 +3,17 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
-local COMBINE_RANGE         = ProxyManager.ATTACKER_RANGE
-local SIGHT_MEMORY_DURATION = 4
-local SOUND_MEMORY_DURATION = 4 -- 临时放这里
-local FACE_COOLDOWN         = 8
-local PROXY_OFFSET          = ProxyManager.PROXY_OFFSET
-local MASK_SHOT_HULL        = MASK_SHOT_HULL
+local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
+local SIGHT_MEMORY_DURATION    = 4
+local SOUND_MEMORY_DURATION    = 4 -- 临时放这里
+local FACE_COOLDOWN            = 16
+local WALL_THICKNESS_THRESHOLD = 32
 
-local IsValid               = IsValid
-local CurTime               = CurTime
-local util_TraceLine        = util.TraceLine
+local PROXY_OFFSET             = 2
+
+local IsValid                  = IsValid
+local CurTime                  = CurTime
+local util_TraceLine           = util.TraceLine
 
 function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
@@ -43,6 +44,8 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             continue -- Gmod 支持此关键字
         end
 
+        -- proxy:SetModelScale(0.4)
+
         -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
         local lastSound      = proxy.lastSoundTime
         local hasRecentSound = false
@@ -66,7 +69,15 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local distance = attackerShootPos:Distance(targetBonePos)
         local isRanged = distance > COMBINE_RANGE
 
-        local isVisible = attacker:IsLineOfSightClear(victim)
+        local victimSideTraceResult = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
+            start = targetBonePos,
+            endpos = attackerShootPos,
+            filter = victim,
+            mask = MASK_SHOT -- https://wiki.facepunch.com/gmod/Enums/MASK
+        })
+        local victimSideHitPos = victimSideTraceResult.HitPos
+
+        local isVisible = victimSideTraceResult.Entity == attacker
 
         if isVisible then
             proxy.lastSightTime = currentTime
@@ -74,21 +85,35 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         local hasRecentSight       = (currentTime - proxy.lastSightTime) <= SIGHT_MEMORY_DURATION
         local hasRecentInfo        = hasRecentSound or hasRecentSight
-        local shouldSuppress       = not isVisible and not hasRecentInfo
+        local shouldSuppress       = not isVisible and hasRecentInfo
         local shouldCloseSuppress  = shouldSuppress and not isRanged
         local shouldRangedSuppress = shouldSuppress and isRanged
 
         local direction            = (targetBonePos - attackerShootPos):GetNormalized()
 
         local targetPos
-        if shouldCloseSuppress then
-            local traceResult = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
+        if shouldSuppress then
+            local attackerSideTraceResult = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
                 start = attackerShootPos,
                 endpos = targetBonePos,
                 filter = attacker,
-                mask = MASK_SHOT_HULL -- https://wiki.facepunch.com/gmod/Enums/MASK
+                mask = MASK_SHOT -- https://wiki.facepunch.com/gmod/Enums/MASK
             })
-            targetPos = traceResult.HitPos
+            local attackerSideHitPos = attackerSideTraceResult.HitPos
+            local wallThickNess = attackerSideHitPos:Distance(victimSideHitPos)
+
+            if wallThickNess > WALL_THICKNESS_THRESHOLD then
+                print("too thick" .. wallThickNess)
+                targetPos = targetBonePos
+            else
+                print("not thick" .. wallThickNess)
+                if shouldCloseSuppress then
+                    targetPos = attackerSideHitPos
+                else                              -- shouldRangedSuppress
+                    targetPos = attackerShootPos +
+                        direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
+                end
+            end
         elseif (isVisible and isRanged) or shouldRangedSuppress then
             targetPos = attackerShootPos + direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
         else

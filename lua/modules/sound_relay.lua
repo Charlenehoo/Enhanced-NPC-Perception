@@ -129,7 +129,7 @@ hook.Add("EntityEmitSound", "SNT_EntityEmitSound", function(data)
         return
     end
 
-    DebugSoundPrinter(data)
+    -- DebugSoundPrinter(data)
 
     local proxies = GetProxiesByVictim(victim)
 
