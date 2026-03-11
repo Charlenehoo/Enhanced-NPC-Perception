@@ -1,4 +1,5 @@
 -- .\lua\entities\enp_proxy.lua
+ProxyManager = ProxyManager or {}
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 
 AddCSLuaFile()
