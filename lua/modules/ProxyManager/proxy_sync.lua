@@ -55,12 +55,12 @@ setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
 local PROXY_FIELDS             = ProxyManager.PROXY_FIELDS
 local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
-local SIGHT_MEMORY_DURATION    = 4
-local SOUND_MEMORY_DURATION    = 4 -- 临时放这里
-local FACE_COOLDOWN            = 16
+local SIGHT_MEMORY_DURATION    = ProxyManager.SIGHT_MEMORY_DURATION
+local SOUND_MEMORY_DURATION    = ProxyManager.SOUND_MEMORY_DURATION
+local FACE_COOLDOWN            = ProxyManager.FACE_COOLDOWN
 local WALL_THICKNESS_THRESHOLD = 32
 
-local PROXY_OFFSET             = 2
+local PROXY_OFFSET             = ProxyManager.PROXY_OFFSET
 
 local IsValid                  = IsValid
 local CurTime                  = CurTime

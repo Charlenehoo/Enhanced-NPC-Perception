@@ -1,5 +1,6 @@
 -- .\lua\entities\enp_proxy.lua
 ProxyManager = ProxyManager or {} -- enp_proxy.lua 早于 autorun 加载
+local PROXY_MODEL = ProxyManager.PROXY_MODEL
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 
 AddCSLuaFile()
@@ -8,7 +9,7 @@ ENT.Type = "ai"
 ENT.AutomaticFrameAdvance = true
 
 function ENT:Initialize() -- https://wiki.facepunch.com/gmod/ENTITY:Initialize
-    self:SetModel("models/editor/cube_small.mdl")
+    self:SetModel(PROXY_MODEL)
     self:SetModelScale(0.04)
     -- self:SetNoDraw(true)
     self:SetCollisionGroup(COLLISION_GROUP_NONE)

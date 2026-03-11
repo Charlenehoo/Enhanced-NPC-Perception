@@ -3,8 +3,8 @@ local ProxyManager = ProxyManager
 local SoundManager = SoundManager
 local DEFAULT_ATTACKER_CLASS_PREFIX = ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX
 
-local PLAYER_SPAWN_DELAY = 0.1
-local RAGDOLL_REMOVE_DELAY = 4
+local PLAYER_SPAWN_DELAY = ProxyManager.PLAYER_SPAWN_DELAY
+local RAGDOLL_REMOVE_DELAY = ProxyManager.RAGDOLL_REMOVE_DELAY
 
 local IsValid = IsValid
 local player_GetHumans = player.GetHumans
