@@ -1,5 +1,5 @@
 -- .\lua\entities\enp_proxy.lua
-ProxyManager = ProxyManager or {}
+ProxyManager = ProxyManager or {} -- enp_proxy.lua 早于 autorun 加载
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 
 AddCSLuaFile()
