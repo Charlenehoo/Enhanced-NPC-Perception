@@ -26,6 +26,6 @@ ProxyManager.CREATE_PROXIES_DELAYED_TIMER_IDENTIFIER_PREFIX = "ENP_CreateProxies
 
 ProxyManager.ATTACKER_SUPPRESSION_TIME = 8
 
-ProxyManager.DEBUG = true
 ProxyManager.DEBUG_PRINT_INTERVAL = 2
 ProxyManager.UPDATE_PRINT_TABLE_TIMER_IDENTIFIER = "ENP_TrueOnPrintTable"
+ProxyManager.DEBUG = true

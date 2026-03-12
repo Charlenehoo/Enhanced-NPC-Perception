@@ -55,18 +55,21 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
-local PROXY_FIELDS             = ProxyManager.PROXY_FIELDS
-local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
-local SIGHT_MEMORY_DURATION    = ProxyManager.SIGHT_MEMORY_DURATION
-local SOUND_MEMORY_DURATION    = ProxyManager.SOUND_MEMORY_DURATION
-local FACE_COOLDOWN            = ProxyManager.FACE_COOLDOWN
-local WALL_THICKNESS_THRESHOLD = 64
-local DEBUG                    = ProxyManager.DEBUG
-local PROXY_OFFSET             = ProxyManager.PROXY_OFFSET
+local PROXY_FIELDS                   = ProxyManager.PROXY_FIELDS
+local COMBINE_RANGE                  = ProxyManager.ATTACKER_RANGE
+local SIGHT_MEMORY_DURATION          = ProxyManager.SIGHT_MEMORY_DURATION
+local SOUND_MEMORY_DURATION          = ProxyManager.SOUND_MEMORY_DURATION
+local FACE_COOLDOWN                  = ProxyManager.FACE_COOLDOWN
+local WALL_THICKNESS_THRESHOLD       = 256
+local PROXY_OFFSET                   = ProxyManager.PROXY_OFFSET
+local DEBUG                          = ProxyManager.DEBUG
+local PROXY_SYNC_DEBUG_PRINT_RATE    = 200
+local IS_PERCEPTIVE_DEBUG_PRINT_RATE = 10
 
-local IsValid                  = IsValid
-local CurTime                  = CurTime
-local util_TraceLine           = util.TraceLine
+local IsValid                        = IsValid
+local CurTime                        = CurTime
+local engine_TickCount               = engine.TickCount
+local util_TraceLine                 = util.TraceLine
 
 -- 材料衰减系数查询函数（占位，返回常数 -5dB）
 local function GetMaterialAttenuation(materialType)
@@ -74,76 +77,90 @@ local function GetMaterialAttenuation(materialType)
 end
 
 --[[
-    声音传播与视觉检测函数
+    感知检测函数（视觉+听觉）
     参数:
-        sourcePos   - 声源位置 (Vector) —— 受害者位置
-        listenerPos - 听者位置 (Vector) —— 攻击者位置
-        sourceEntity - 声源实体 (Entity) —— 受害者实体
-        listenerEntity - 听者实体 (Entity) —— 攻击者实体
+        victimPos   - 受害者位置 (Vector)
+        attackerPos - 攻击者位置 (Vector)
+        victim      - 受害者实体 (Entity)
+        attacker    - 攻击者实体 (Entity)
         sourceSPL   - 可选，声源在1米处的声压级 (dB)，若为 nil 则表示无声（仅执行视觉检测）
     返回:
         isVisible     - 视觉可见性 (boolean) —— 攻击者是否直接看到受害者
         isAudible     - 听觉可听性 (boolean) —— 攻击者是否能听到受害者发出的声音
         wallThickness - 累计穿过的墙体总厚度 (number) —— 声波路径上所有实体厚度的累加
+        firstHitPos   - 从攻击者出发第一次击中的位置 (Vector)，若视觉可见则为 nil
 --]]
-local function IsSoundAudible(sourcePos, listenerPos, sourceEntity, listenerEntity, sourceSPL)
-    -- 1. 视觉检测：从听者（攻击者）向声源（受害者）发射射线，仅排除攻击者自身
+local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
+    local currentTick = DEBUG and engine_TickCount() or nil
+
+    if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+        local distance = victimPos:Distance(attackerPos)
+        MsgN("[IsPerceptive] Called with: distance=" .. distance ..
+            ", victim=" .. victim:EntIndex() ..
+            ", attacker=" .. attacker:EntIndex() ..
+            ", sourceSPL=" .. tostring(sourceSPL or "nil"))
+    end
+
+    -- 1. 视觉检测：从攻击者向受害者发射射线，仅排除攻击者自身
     local visTrace = util_TraceLine({
-        start = listenerPos,
-        endpos = sourcePos,
-        filter = listenerEntity, -- 排除攻击者，避免自遮挡
+        start = attackerPos,
+        endpos = victimPos,
+        filter = attacker, -- 排除攻击者，避免自遮挡
         mask = MASK_SHOT,
     })
 
     -- 视觉可见条件：射线直接命中受害者实体
-    local isVisible = (visTrace.Entity == sourceEntity)
+    local isVisible = (visTrace.Entity == victim)
+    local firstHitPos = nil -- 默认无命中点
 
     -- 2. 若无声（sourceSPL 为 nil），则直接返回视觉结果，听觉为 false，墙厚为 0
     if sourceSPL == nil then
-        if DEBUG then
-            MsgN("[IsSoundAudible] No sound source, returning visual only: isVisible=" .. tostring(isVisible))
+        local firstHitPos = isVisible and nil or visTrace.HitPos -- 视觉不可见时返回命中点
+        if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+            MsgN("[IsPerceptive] No sound source, returning visual only: isVisible=" .. tostring(isVisible))
         end
-        return isVisible, false, 0
+        return isVisible, false, 0, firstHitPos
     end
 
     -- 3. 声音传播计算
-    local distance = math.max(sourcePos:Distance(listenerPos), 1)
+    local distance = math.max(victimPos:Distance(attackerPos), 1)
     local distanceAttenuation = 20 * math.log10(distance) -- 距离衰减 dB
     local threshold = 0                                   -- 可听阈值 dB，可调整
 
     local totalObstacleAttenuation = 0                    -- 材料衰减累计（dB）
     local totalWallThickness = 0                          -- 墙厚累计（游戏单位）
 
-    -- 如果视觉可见，则直接根据距离衰减判断可听性（墙厚为 0）
+    -- 如果视觉可见，则直接根据距离衰减判断可听性（墙厚为 0，firstHitPos = nil）
     if isVisible then
         local finalSPL = sourceSPL - distanceAttenuation
         local isAudible = finalSPL > threshold
-        if DEBUG then
-            MsgN("[IsSoundAudible] Visible, finalSPL=" .. finalSPL .. ", isAudible=" .. tostring(isAudible))
+        if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+            MsgN("[IsPerceptive] Visible, finalSPL=" .. finalSPL .. ", isAudible=" .. tostring(isAudible))
         end
-        return true, isAudible, 0
+        return true, isAudible, 0, nil
     end
 
-    -- 视觉不可见：复用第一次命中结果，开始循环追踪
-    local startPos = visTrace.HitPos -- 第一次击中的位置
-    local inside = true              -- 从外部进入实体
-    local entryPos = startPos        -- 记录进入点
+    -- 视觉不可见：记录第一次命中点
+    firstHitPos = visTrace.HitPos
+    local startPos = firstHitPos
+    local inside = true       -- 已进入第一个实体
+    local entryPos = startPos -- 记录进入点
     totalObstacleAttenuation = totalObstacleAttenuation + GetMaterialAttenuation(visTrace.MatType)
 
-    local dir = (sourcePos - listenerPos):GetNormalized() -- 从听者指向声源的方向
+    local dir = (victimPos - attackerPos):GetNormalized() -- 从攻击者指向受害者的方向
     local epsilon = 0.1                                   -- 微小偏移，避免卡在表面
     local maxIter, iter = 100, 0
 
-    -- 后续追踪需要排除声源和听者实体，避免将终点本身当作障碍物
-    local filter = { sourceEntity, listenerEntity }
+    -- 后续追踪需要排除攻击者和受害者实体，避免将终点本身当作障碍物
+    local filter = { victim, attacker }
 
     while iter < maxIter do
         iter = iter + 1
-        dir = (sourcePos - startPos):GetNormalized() -- 更新方向（起点移动后）
+        dir = (victimPos - startPos):GetNormalized() -- 更新方向（起点移动后）
 
         local trace = util_TraceLine({
             start = startPos + dir * epsilon, -- 沿方向微移，避免卡在同一表面
-            endpos = sourcePos,
+            endpos = victimPos,
             filter = filter,
             mask = MASK_SHOT,
         })
@@ -159,13 +176,13 @@ local function IsSoundAudible(sourcePos, listenerPos, sourceEntity, listenerEnti
                 inside = false
                 entryPos = nil
 
-                -- 提前返回：累计墙厚超过 WALL_THICKNESS_THRESHOLD 则判定不可听见，节约计算性能
+                -- 提前返回：累计墙厚超过阈值则判定不可听见，节约计算性能
                 if totalWallThickness > WALL_THICKNESS_THRESHOLD then
-                    if DEBUG then
-                        MsgN("[IsSoundAudible] Wall thickness > WALL_THICKNESS_THRESHOLD, aborting: thickness=" ..
+                    if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+                        MsgN("[IsPerceptive] Wall thickness > WALL_THICKNESS_THRESHOLD, aborting: thickness=" ..
                             totalWallThickness)
                     end
-                    return isVisible, false, totalWallThickness
+                    return isVisible, false, totalWallThickness, firstHitPos
                 end
             else
                 -- 进入新实体
@@ -175,17 +192,17 @@ local function IsSoundAudible(sourcePos, listenerPos, sourceEntity, listenerEnti
 
             -- 声压级提前检查（距离衰减使用总距离，保持不变）
             if sourceSPL - distanceAttenuation + totalObstacleAttenuation <= threshold then
-                if DEBUG then
-                    MsgN("[IsSoundAudible] Sound pressure below threshold after obstacles, finalSPL=" ..
+                if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+                    MsgN("[IsPerceptive] Sound pressure below threshold after obstacles, finalSPL=" ..
                         (sourceSPL - distanceAttenuation + totalObstacleAttenuation))
                 end
-                return isVisible, false, totalWallThickness
+                return isVisible, false, totalWallThickness, firstHitPos
             end
 
             -- 更新起点为击中点，准备下一次追踪
             startPos = trace.HitPos
         else
-            -- 未击中任何物体，说明已到达目标（声源位置），但因过滤了目标实体，所以不会命中目标本身
+            -- 未击中任何物体，说明已到达目标（受害者位置），但因过滤了目标实体，所以不会命中目标本身
             break
         end
     end
@@ -193,15 +210,20 @@ local function IsSoundAudible(sourcePos, listenerPos, sourceEntity, listenerEnti
     -- 计算最终声压级并判断可听性
     local finalSPL = sourceSPL - distanceAttenuation + totalObstacleAttenuation
     local isAudible = finalSPL > threshold
-    if DEBUG then
-        MsgN("[IsSoundAudible] Final decision: isVisible=" ..
+    if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+        MsgN("[IsPerceptive] Final decision: isVisible=" ..
             tostring(isVisible) .. ", isAudible=" .. tostring(isAudible) .. ", wallThickness=" .. totalWallThickness)
     end
-    return isVisible, isAudible, totalWallThickness
+    return isVisible, isAudible, totalWallThickness, firstHitPos
 end
 
 function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
+    local currentTick = DEBUG and engine_TickCount() or nil
+
+    if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+        MsgN("=====" .. currentTime .. "=====")
+    end
 
     ProxyManager.InitializeBoneCache(victim)
 
@@ -229,98 +251,96 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             continue -- Gmod 支持此关键字
         end
 
-        local attackerShootPos = attacker:GetShootPos()
-
-        -- proxy:SetModelScale(0.4)
-
+        local attackerShootPos                                        = attacker:GetShootPos()
         -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
-        local lastSoundTime    = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
-        local hasRecentSound   = (currentTime - lastSoundTime) <= SOUND_MEMORY_DURATION
-        local lastSoundLevel   = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
+        local lastSoundTime                                           = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
+        local hasRecentSound                                          = (currentTime - lastSoundTime) <=
+            SOUND_MEMORY_DURATION
+        local lastSoundLevel                                          = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
 
-        -- local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
-        -- if currentTime - lastFace >= FACE_COOLDOWN then
-        --     local curSched = attacker:GetCurrentSchedule()
-        --     if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
-        --         if not IsValid(attacker:GetEnemy()) then
-        --             attacker:SetEnemy(proxy)
-        --             attacker:SetSchedule(SCHED_COMBAT_FACE)
-        --             proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
-        --         end
-        --     end
-        -- end
+        local spl                                                     = hasRecentSound and (lastSoundLevel or 0) or nil
+        local isVisible, isAudible, wallThickness, attackerSideHitPos = IsPerceptive(
+            targetBonePos,
+            attackerShootPos,
+            victim,
+            attacker,
+            spl
+        )
 
-        local isVisible
-        local isAudible        = false -- not hasRecentSound 则一定不可听
-        local wallThickness    = 0     -- 可见则墙厚比为0
-        if hasRecentSound then
-            isVisible, isAudible, wallThickness = IsSoundAudible(
-                targetBonePos,
-                attackerShootPos,
-                victim,
-                attacker,
-                lastSoundLevel or 0 -- 若无声压级则默认 0 dB（可听见概率低）
-            )
-        else
-            isVisible, _, _ = IsSoundAudible(
-                targetBonePos,
-                attackerShootPos,
-                victim,
-                attacker,
-                nil
-            )
-        end
-
-        local distance = attackerShootPos:Distance(targetBonePos)
-        local isRanged = distance > COMBINE_RANGE
-
-        -- local victimSideTraceResult = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
-        --     start = targetBonePos,
-        --     endpos = attackerShootPos,
-        --     filter = victim,
-        --     mask = MASK_SHOT -- https://wiki.facepunch.com/gmod/Enums/MASK
-        -- })
-        -- local victimSideHitPos      = victimSideTraceResult.HitPos
-
-        -- local isVisible             = victimSideTraceResult.Entity == attacker
+        local distance                                                = attackerShootPos:Distance(targetBonePos)
+        local isRanged                                                = distance > COMBINE_RANGE
 
         if isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
 
-        local hasRecentSight       = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
-        local hasRecentInfo        = (isAudible and hasRecentSound) or hasRecentSight
-        local shouldSuppress       = not isVisible and hasRecentInfo
-        local shouldCloseSuppress  = shouldSuppress and not isRanged
-        local shouldRangedSuppress = shouldSuppress and isRanged
+        local hasRecentSight      = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
+        local hasRecentInfo       = (isAudible and hasRecentSound) or hasRecentSight
+        local shouldSuppress      = not isVisible and hasRecentInfo
+        local shouldCloseSuppress = shouldSuppress and not isRanged
 
-        local direction            = (targetBonePos - attackerShootPos):GetNormalized()
+        local direction           = (targetBonePos - attackerShootPos):GetNormalized()
 
         local targetPos
+
+        if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+            MsgN(string.format(
+                "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s",
+                attacker:EntIndex(), victim:EntIndex(),
+                tostring(isVisible), tostring(isAudible), wallThickness,
+                tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
+                tostring(shouldSuppress), tostring(isRanged)))
+        end
+
         if shouldSuppress then
-            local attackerSideTraceResult = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
-                start = attackerShootPos,
-                endpos = targetBonePos,
-                filter = attacker,
-                mask = MASK_SHOT -- https://wiki.facepunch.com/gmod/Enums/MASK
-            })
-            local attackerSideHitPos = attackerSideTraceResult.HitPos
-            -- local wallThickNess = attackerSideHitPos:Distance(victimSideHitPos)
+            if isAudible then
+                local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
+                if currentTime - lastFace >= FACE_COOLDOWN then
+                    local curSched = attacker:GetCurrentSchedule()
+                    if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
+                        if not IsValid(attacker:GetEnemy()) then
+                            attacker:SetEnemy(proxy)
+                            attacker:SetSchedule(SCHED_COMBAT_FACE)
+                            proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
+                            if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+                                MsgN("[ProxySync] Attacker[%d] forced to face proxy due to sound", attacker:EntIndex())
+                            end
+                        end
+                    end
+                end
+            end
 
             if wallThickness > WALL_THICKNESS_THRESHOLD then
                 targetPos = targetBonePos
+                if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+                    MsgN("[ProxySync] Thick wall (%.2f > %d), placing proxy at victim (bypass)", wallThickness,
+                        WALL_THICKNESS_THRESHOLD)
+                end
             else
                 if shouldCloseSuppress then
                     targetPos = attackerSideHitPos
-                else                              -- shouldRangedSuppress
+                    if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+                        MsgN("[ProxySync] Thin wall, close suppress, placing proxy at hit point (wall surface)")
+                    end
+                else                              -- shouldRangedSuppress = shouldSuppress and isRanged
                     targetPos = attackerShootPos +
                         direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
+                    if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+                        MsgN("[ProxySync] Thin wall, ranged suppress, placing proxy at max range (%.2f units)",
+                            COMBINE_RANGE)
+                    end
                 end
             end
         elseif isVisible and isRanged then
-            targetPos = attackerShootPos + direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
+            targetPos = attackerShootPos + direction * COMBINE_RANGE
+            if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+                MsgN("[ProxySync] Visible but out of range, placing proxy at max range")
+            end
         else
             targetPos = targetBonePos
+            if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+                MsgN("[ProxySync] Default case (visible & in-range or no info), placing proxy at victim")
+            end
         end
 
         proxy:SetPos(targetPos - direction * PROXY_OFFSET)
@@ -328,10 +348,15 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     end
 end
 
-function ProxyManager.SyncAllProxies()
+local function SyncAllProxies()
     for victim, attackerProxyMapView in ProxyManager.IterateVictimsWithAttackerProxyMapView() do
         if IsValid(victim) then
             ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         end
     end
 end
+
+hook.Add("Tick", "ENP_ProxyManagerSync", function()
+    SyncAllProxies()
+    -- ProxyManager.UpdatePrintTableTimer()
+end)
