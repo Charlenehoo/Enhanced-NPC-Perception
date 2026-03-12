@@ -55,20 +55,48 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
-local PROXY_FIELDS                   = ProxyManager.PROXY_FIELDS
-local COMBINE_RANGE                  = ProxyManager.ATTACKER_RANGE
-local SIGHT_MEMORY_DURATION          = ProxyManager.SIGHT_MEMORY_DURATION
-local SOUND_MEMORY_DURATION          = ProxyManager.SOUND_MEMORY_DURATION
-local FACE_COOLDOWN                  = ProxyManager.FACE_COOLDOWN
-local WALL_THICKNESS_THRESHOLD       = 256
-local PROXY_OFFSET                   = ProxyManager.PROXY_OFFSET
-local DEBUG                          = ProxyManager.DEBUG
-local IS_PERCEPTIVE_DEBUG_PRINT_RATE = 20
+local PROXY_FIELDS             = ProxyManager.PROXY_FIELDS
+local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
+local SIGHT_MEMORY_DURATION    = ProxyManager.SIGHT_MEMORY_DURATION
+local SOUND_MEMORY_DURATION    = ProxyManager.SOUND_MEMORY_DURATION
+local FACE_COOLDOWN            = ProxyManager.FACE_COOLDOWN
+local WALL_THICKNESS_THRESHOLD = 256
+local PROXY_OFFSET             = ProxyManager.PROXY_OFFSET
+local DEBUG                    = ProxyManager.DEBUG
 
-local IsValid                        = IsValid
-local CurTime                        = CurTime
-local engine_TickCount               = engine.TickCount
-local util_TraceLine                 = util.TraceLine
+local IsValid                  = IsValid
+local CurTime                  = CurTime
+local util_TraceLine           = util.TraceLine
+
+-- 坐标量化辅助函数
+local function QuantizeVector(v, gridSize)
+    gridSize = gridSize or 10 -- 默认网格大小 10 单位
+    return Vector(
+        math.floor(v.x / gridSize) * gridSize,
+        math.floor(v.y / gridSize) * gridSize,
+        0
+    -- math.floor(v.z / gridSize) * gridSize
+    )
+end
+
+-- 生成感知任务键（用于调试打印控制和未来缓存）
+local function GetPerceptionTaskKey(victimPos, attackerPos, victim, attacker, sourceSPL, gridSize)
+    -- 量化坐标
+    local qVictimPos = QuantizeVector(victimPos, gridSize)
+    local qAttackerPos = QuantizeVector(attackerPos, gridSize)
+    -- 构建键：实体索引 + 量化坐标 + 声压级（若无声音则用特殊值）
+    local splKey = sourceSPL and string.format("%.0f", sourceSPL) or "nosound"
+    return string.format("%d_%d_%s_%s_%s",
+        victim:EntIndex(),
+        attacker:EntIndex(),
+        tostring(qVictimPos),
+        tostring(qAttackerPos),
+        splKey
+    )
+end
+
+-- 用于存储上次打印的任务键（按受害者-攻击者对索引）
+local _lastPrintKey = setmetatable({}, { __mode = "k" })
 
 -- 材料衰减系数查询函数（占位，返回常数 -5dB）
 local function GetMaterialAttenuation(materialType)
@@ -89,16 +117,23 @@ end
         wallThickness - 累计穿过的墙体总厚度 (number) —— 声波路径上所有实体厚度的累加
         firstHitPos   - 从攻击者出发第一次击中的位置 (Vector)，若视觉可见则为 nil
 --]]
-local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
-    local currentTick = DEBUG and engine_TickCount() or nil
+local function IsPerceptive(victimPos, attackerPos, stableVictimPos, victim, attacker, sourceSPL)
+    local pairKey = victim:EntIndex() * 10000 + attacker:EntIndex()
+    local taskKey = GetPerceptionTaskKey(stableVictimPos, attackerPos, victim, attacker, sourceSPL, 64)
+    local shouldPrint = DEBUG and (_lastPrintKey[pairKey] ~= taskKey)
 
-    if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+    if shouldPrint then
+        -- 更新打印键
+        _lastPrintKey[pairKey] = taskKey
+        -- 入口打印
         local distance = victimPos:Distance(attackerPos)
         MsgN("----------")
-        MsgN("[IsPerceptive] Called with: distance=" .. distance ..
+        MsgN("[IsPerceptive] Called with: taskKey=" .. taskKey)
+        MsgN("distance=" .. distance ..
             ", victim=" .. victim:EntIndex() ..
             ", attacker=" .. attacker:EntIndex() ..
-            ", sourceSPL=" .. tostring(sourceSPL or "nil"))
+            ", sourceSPL=" .. tostring(sourceSPL or "nil") ..
+            ".")
     end
 
     -- 1. 视觉检测：从攻击者向受害者发射射线，仅排除攻击者自身
@@ -116,7 +151,7 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
     -- 2. 若无声（sourceSPL 为 nil），则直接返回视觉结果，听觉为 false，墙厚为 0
     if sourceSPL == nil then
         local firstHitPos = isVisible and nil or visTrace.HitPos -- 视觉不可见时返回命中点
-        if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+        if shouldPrint then
             MsgN("[IsPerceptive] No sound source, returning visual only: isVisible=" .. tostring(isVisible))
         end
         return isVisible, false, 0, firstHitPos
@@ -134,7 +169,7 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
     if isVisible then
         local finalSPL = sourceSPL - distanceAttenuation
         local isAudible = finalSPL > threshold
-        if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+        if shouldPrint then
             MsgN("[IsPerceptive] Visible, finalSPL=" .. finalSPL .. ", isAudible=" .. tostring(isAudible))
         end
         return true, isAudible, 0, nil
@@ -192,7 +227,7 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
 
             -- 声压级提前检查（距离衰减使用总距离，保持不变）
             if sourceSPL - distanceAttenuation + totalObstacleAttenuation <= threshold then
-                if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+                if shouldPrint then
                     MsgN("[IsPerceptive] Sound pressure below threshold after obstacles, finalSPL=" ..
                         (sourceSPL - distanceAttenuation + totalObstacleAttenuation))
                 end
@@ -210,7 +245,7 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
     -- 计算最终声压级并判断可听性
     local finalSPL = sourceSPL - distanceAttenuation + totalObstacleAttenuation
     local isAudible = finalSPL > threshold
-    if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+    if shouldPrint then
         MsgN("[IsPerceptive] Final decision: isVisible=" ..
             tostring(isVisible) .. ", isAudible=" .. tostring(isAudible) .. ", wallThickness=" .. totalWallThickness)
         MsgN("----------")
@@ -263,6 +298,7 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local isVisible, isAudible, wallThickness, attackerSideHitPos = IsPerceptive(
             targetBonePos,
             attackerShootPos,
+            victim:EyePos(),
             victim,
             attacker,
             spl
@@ -333,8 +369,6 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             isRanged = isRanged,
             placementReason = placementReason,
         }
-
-
 
         -- 状态变化时打印完整调试信息
         if DEBUG then
