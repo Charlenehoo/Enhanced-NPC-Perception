@@ -1,12 +1,12 @@
 -- .\lua\modules\ProxyManager\constants.lua
 ProxyManager = ProxyManager or {}
-ProxyManager.PROXY_MODEL = "models/editor/cube_small.mdl"
 ProxyManager.PROXY_CLASS = "enp_proxy"
 ProxyManager.PROXY_FIELDS = {
     VICTIM = "victim",
     ATTACKER = "attacker",
     LAST_SIGHT_TIME = "lastSightTime",
     LAST_SOUND_TIME = "lastSoundTime",
+    LAST_SOUND_LEVEL = "lastSoundLevel",
     LAST_FACE_TIME = "lastFaceTime",
 }
 

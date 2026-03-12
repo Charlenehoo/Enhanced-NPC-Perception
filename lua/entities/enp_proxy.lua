@@ -1,7 +1,8 @@
 -- .\lua\entities\enp_proxy.lua
 ProxyManager = ProxyManager or {} -- enp_proxy.lua 早于 autorun 加载
-local PROXY_MODEL = ProxyManager.PROXY_MODEL
+local PROXY_MODEL = "models/editor/cube_small.mdl"
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
+
 
 AddCSLuaFile()
 ENT.Base = "base_ai"
