@@ -66,6 +66,54 @@ local IsValid                  = IsValid
 local CurTime                  = CurTime
 local util_TraceLine           = util.TraceLine
 
+-- 判断从 soundPos 到 listenerPos 的声音是否可听
+-- @param soundPos Vector 声音发出位置
+-- @param listenerPos Vector 听者位置
+-- @param listenerEnt Entity 听者实体（用于过滤，通常为 attacker）
+-- @param sourceEnt Entity 声源实体（用于过滤，通常为 victim）
+-- @return boolean 可听返回 true，否则 false
+local function IsSoundAudibleAlongRay(soundPos, listenerPos, listenerEnt, sourceEnt)
+    -- 1. 使用 ents.FindAlongRay 获取射线上的所有实体
+    -- 注意：该函数返回的实体包括射线路径上所有碰到的实体，无论是否被阻挡
+    local entitiesOnRay = ents.FindAlongRay(soundPos, listenerPos)
+
+    -- 2. 初始化阻挡计数器
+    local blockingCount = 0
+
+    -- 3. 遍历每个实体，判断是否应阻挡声音
+    for _, ent in ipairs(entitiesOnRay) do
+        -- 忽略声源实体和听者实体本身
+        if ent ~= sourceEnt and ent ~= listenerEnt then
+            -- 根据你的游戏逻辑，定义哪些类型的实体会阻挡声音
+            -- 以下是常见的阻挡类型，请根据实际需求调整
+
+            -- 3.1 世界实体（地图的固定几何体）通常阻挡声音
+            if ent:IsWorld() then
+                blockingCount = blockingCount + 1
+
+                -- 3.2 具有特定类名的实体（如 func_brush 动态 brushes）
+            elseif ent:GetClass() == "func_brush" then
+                blockingCount = blockingCount + 1
+
+                -- 3.3 具有特定材质的实体（可选，需要进一步判断）
+                -- 注意：GetMaterialType() 返回的是整数材质类型，需对照 Enums/MAT
+                -- elseif ent:GetMaterialType() == MAT_GLASS or ent:GetMaterialType() == MAT_WOOD then
+                --     blockingCount = blockingCount + 1
+
+                -- 3.4 你也可以根据实体名称、Solid 类型等自定义条件
+                -- elseif ent:GetSolid() == SOLID_BSP then
+                --     blockingCount = blockingCount + 1
+            end
+        end
+    end
+
+    -- 4. 根据阻挡数量判断是否可听
+    -- 阈值需要根据实际游戏测试调整，这里先设为 2（即穿过两个阻挡实体后不可听）
+    local audibilityThreshold = 2
+    return blockingCount <= audibilityThreshold
+end
+
+
 function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
 
