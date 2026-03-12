@@ -63,8 +63,8 @@ local FACE_COOLDOWN                  = ProxyManager.FACE_COOLDOWN
 local WALL_THICKNESS_THRESHOLD       = 256
 local PROXY_OFFSET                   = ProxyManager.PROXY_OFFSET
 local DEBUG                          = ProxyManager.DEBUG
-local PROXY_SYNC_DEBUG_PRINT_RATE    = 200
-local IS_PERCEPTIVE_DEBUG_PRINT_RATE = 10
+local PROXY_SYNC_DEBUG_PRINT_RATE    = 40
+local IS_PERCEPTIVE_DEBUG_PRINT_RATE = 20
 
 local IsValid                        = IsValid
 local CurTime                        = CurTime
@@ -95,6 +95,7 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
 
     if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
         local distance = victimPos:Distance(attackerPos)
+        MsgN("----------")
         MsgN("[IsPerceptive] Called with: distance=" .. distance ..
             ", victim=" .. victim:EntIndex() ..
             ", attacker=" .. attacker:EntIndex() ..
@@ -176,14 +177,14 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
                 inside = false
                 entryPos = nil
 
-                -- 提前返回：累计墙厚超过阈值则判定不可听见，节约计算性能
-                if totalWallThickness > WALL_THICKNESS_THRESHOLD then
-                    if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
-                        MsgN("[IsPerceptive] Wall thickness > WALL_THICKNESS_THRESHOLD, aborting: thickness=" ..
-                            totalWallThickness)
-                    end
-                    return isVisible, false, totalWallThickness, firstHitPos
-                end
+                -- -- 提前返回：累计墙厚超过阈值则判定不可听见，节约计算性能
+                -- if totalWallThickness > WALL_THICKNESS_THRESHOLD then
+                --     if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
+                --         MsgN("[IsPerceptive] Wall thickness > WALL_THICKNESS_THRESHOLD, aborting: thickness=" ..
+                --             totalWallThickness)
+                --     end
+                --     return isVisible, false, totalWallThickness, firstHitPos
+                -- end
             else
                 -- 进入新实体
                 entryPos = trace.HitPos
@@ -213,6 +214,7 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
     if DEBUG and currentTick % IS_PERCEPTIVE_DEBUG_PRINT_RATE == 0 then
         MsgN("[IsPerceptive] Final decision: isVisible=" ..
             tostring(isVisible) .. ", isAudible=" .. tostring(isAudible) .. ", wallThickness=" .. totalWallThickness)
+        MsgN("----------")
     end
     return isVisible, isAudible, totalWallThickness, firstHitPos
 end
@@ -220,10 +222,6 @@ end
 function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
     local currentTick = DEBUG and engine_TickCount() or nil
-
-    if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-        MsgN("=====" .. currentTime .. "=====")
-    end
 
     ProxyManager.InitializeBoneCache(victim)
 
@@ -282,6 +280,10 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local direction           = (targetBonePos - attackerShootPos):GetNormalized()
 
         local targetPos
+
+        if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+            MsgN("=====" .. currentTime .. "=====")
+        end
 
         if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
             MsgN(string.format(
@@ -345,6 +347,9 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         proxy:SetPos(targetPos - direction * PROXY_OFFSET)
         proxy:SetAngles(direction:Angle())
+        if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
+            MsgN("==========")
+        end
     end
 end
 
