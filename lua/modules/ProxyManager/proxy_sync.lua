@@ -334,28 +334,32 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             placementReason = placementReason,
         }
 
-        -- 检测状态是否发生变化
-        local stateChanged = false
-        for k, v in pairs(newState) do
-            if oldState[k] ~= v then
-                stateChanged = true
-                break
-            end
-        end
+
 
         -- 状态变化时打印完整调试信息
-        if stateChanged and DEBUG then
-            MsgN("=====" .. currentTime .. "=====")
-            MsgN(string.format(
-                "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s, placementReason=%s",
-                attacker:EntIndex(), victim:EntIndex(),
-                tostring(isVisible), tostring(isAudible), wallThickness,
-                tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
-                tostring(shouldSuppress), tostring(isRanged),
-                tostring(placementReason)))
-            MsgN("==========")
-            -- 更新存储的状态
-            proxy._debugState = newState
+        if DEBUG then
+            -- 检测状态是否发生变化
+            local stateChanged = false
+            for k, v in pairs(newState) do
+                if oldState[k] ~= v then
+                    stateChanged = true
+                    break
+                end
+            end
+
+            if stateChanged then
+                MsgN("=====" .. currentTime .. "=====")
+                MsgN(string.format(
+                    "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s, placementReason=%s",
+                    attacker:EntIndex(), victim:EntIndex(),
+                    tostring(isVisible), tostring(isAudible), wallThickness,
+                    tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
+                    tostring(shouldSuppress), tostring(isRanged),
+                    tostring(placementReason)))
+                MsgN("==========")
+                -- 更新存储的状态
+                proxy._debugState = newState
+            end
         end
 
         proxy:SetPos(targetPos - direction * PROXY_OFFSET)
