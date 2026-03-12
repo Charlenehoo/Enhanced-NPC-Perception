@@ -63,7 +63,6 @@ local FACE_COOLDOWN                  = ProxyManager.FACE_COOLDOWN
 local WALL_THICKNESS_THRESHOLD       = 256
 local PROXY_OFFSET                   = ProxyManager.PROXY_OFFSET
 local DEBUG                          = ProxyManager.DEBUG
-local PROXY_SYNC_DEBUG_PRINT_RATE    = 40
 local IS_PERCEPTIVE_DEBUG_PRINT_RATE = 20
 
 local IsValid                        = IsValid
@@ -219,9 +218,8 @@ local function IsPerceptive(victimPos, attackerPos, victim, attacker, sourceSPL)
     return isVisible, isAudible, totalWallThickness, firstHitPos
 end
 
-function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
+local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
-    local currentTick = DEBUG and engine_TickCount() or nil
 
     ProxyManager.InitializeBoneCache(victim)
 
@@ -250,6 +248,11 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         end
 
         local attackerShootPos                                        = attacker:GetShootPos()
+        local distance                                                = attackerShootPos:Distance(targetBonePos)
+        local direction                                               = (targetBonePos - attackerShootPos):GetNormalized()
+
+        local isRanged                                                = distance > COMBINE_RANGE
+
         -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
         local lastSoundTime                                           = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
         local hasRecentSound                                          = (currentTime - lastSoundTime) <=
@@ -265,9 +268,6 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             spl
         )
 
-        local distance                                                = attackerShootPos:Distance(targetBonePos)
-        local isRanged                                                = distance > COMBINE_RANGE
-
         if isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
@@ -277,22 +277,8 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local shouldSuppress      = not isVisible and hasRecentInfo
         local shouldCloseSuppress = shouldSuppress and not isRanged
 
-        local direction           = (targetBonePos - attackerShootPos):GetNormalized()
-
         local targetPos
-
-        if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-            MsgN("=====" .. currentTime .. "=====")
-        end
-
-        if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-            MsgN(string.format(
-                "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s",
-                attacker:EntIndex(), victim:EntIndex(),
-                tostring(isVisible), tostring(isAudible), wallThickness,
-                tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
-                tostring(shouldSuppress), tostring(isRanged)))
-        end
+        local placementReason
 
         if shouldSuppress then
             if isAudible then
@@ -304,9 +290,6 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
                             attacker:SetEnemy(proxy)
                             attacker:SetSchedule(SCHED_COMBAT_FACE)
                             proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
-                            if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-                                MsgN("[ProxySync] Attacker[%d] forced to face proxy due to sound", attacker:EntIndex())
-                            end
                         end
                     end
                 end
@@ -314,49 +297,76 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
             if wallThickness > WALL_THICKNESS_THRESHOLD then
                 targetPos = targetBonePos
-                if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-                    MsgN("[ProxySync] Thick wall (%.2f > %d), placing proxy at victim (bypass)", wallThickness,
-                        WALL_THICKNESS_THRESHOLD)
-                end
+                placementReason = "thick wall, proxy at victim"
             else
                 if shouldCloseSuppress then
                     targetPos = attackerSideHitPos
-                    if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-                        MsgN("[ProxySync] Thin wall, close suppress, placing proxy at hit point (wall surface)")
-                    end
+                    placementReason = "thin wall, close suppress"
                 else                              -- shouldRangedSuppress = shouldSuppress and isRanged
                     targetPos = attackerShootPos +
                         direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
-                    if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-                        MsgN("[ProxySync] Thin wall, ranged suppress, placing proxy at max range (%.2f units)",
-                            COMBINE_RANGE)
-                    end
+                    placementReason = "thin wall, ranged suppress"
                 end
             end
         elseif isVisible and isRanged then
             targetPos = attackerShootPos + direction * COMBINE_RANGE
-            if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-                MsgN("[ProxySync] Visible but out of range, placing proxy at max range")
-            end
+            placementReason = "visible out of range"
         else
             targetPos = targetBonePos
-            if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-                MsgN("[ProxySync] Default case (visible & in-range or no info), placing proxy at victim")
+            placementReason = "default (visible & in-range or no info)"
+        end
+
+        -- 获取或初始化代理的调试状态表
+        if not proxy._debugState then
+            proxy._debugState = {}
+        end
+        local oldState = proxy._debugState
+
+        -- 构建当前状态表（用于检测变化）
+        local newState = {
+            isVisible = isVisible,
+            isAudible = isAudible,
+            hasRecentSight = hasRecentSight,
+            hasRecentSound = hasRecentSound,
+            hasRecentInfo = hasRecentInfo,
+            shouldSuppress = shouldSuppress,
+            isRanged = isRanged,
+            placementReason = placementReason,
+        }
+
+        -- 检测状态是否发生变化
+        local stateChanged = false
+        for k, v in pairs(newState) do
+            if oldState[k] ~= v then
+                stateChanged = true
+                break
             end
+        end
+
+        -- 状态变化时打印完整调试信息
+        if stateChanged and DEBUG then
+            MsgN("=====" .. currentTime .. "=====")
+            MsgN(string.format(
+                "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s, placementReason=%s",
+                attacker:EntIndex(), victim:EntIndex(),
+                tostring(isVisible), tostring(isAudible), wallThickness,
+                tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
+                tostring(shouldSuppress), tostring(isRanged),
+                tostring(placementReason)))
+            MsgN("==========")
+            -- 更新存储的状态
+            proxy._debugState = newState
         end
 
         proxy:SetPos(targetPos - direction * PROXY_OFFSET)
         proxy:SetAngles(direction:Angle())
-        if DEBUG and currentTick % PROXY_SYNC_DEBUG_PRINT_RATE == 0 then
-            MsgN("==========")
-        end
     end
 end
 
 local function SyncAllProxies()
     for victim, attackerProxyMapView in ProxyManager.IterateVictimsWithAttackerProxyMapView() do
         if IsValid(victim) then
-            ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
+            SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         end
     end
 end
