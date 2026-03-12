@@ -1,13 +1,20 @@
 -- .\lua\modules\ProxyManager\constants.lua
 ProxyManager = ProxyManager or {}
-ProxyManager.PROXY_MODEL = "models/editor/cube_small.mdl"
 ProxyManager.PROXY_CLASS = "enp_proxy"
 ProxyManager.PROXY_FIELDS = {
     VICTIM = "victim",
     ATTACKER = "attacker",
     LAST_SIGHT_TIME = "lastSightTime",
-    LAST_SOUND_TIME = "lastSoundTime",
+
     LAST_FACE_TIME = "lastFaceTime",
+
+    SOUND_COUNTER = "soundCounter",
+    LAST_SOUND_POS = "lastSoundPos",
+
+    LAST_SOUND_EMIT_TIME = "lastSoundEmitTime",
+    LAST_SOUND_EMIT_ID = "lastSoundEmitID",
+    LAST_SOUND_AUDIBLE_TIME = "lastSoundAudibleTime",
+    LAST_SOUND_AUDIBLE_ID = "lastSoundAudibleId",
 }
 
 ProxyManager.PLAYER_SPAWN_DELAY = 0.15 -- 10 Tick

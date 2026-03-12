@@ -1,6 +1,6 @@
 -- .\lua\entities\enp_proxy.lua
 ProxyManager = ProxyManager or {} -- enp_proxy.lua 早于 autorun 加载
-local PROXY_MODEL = ProxyManager.PROXY_MODEL
+local PROXY_MODEL = "models/editor/cube_small.mdl"
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
 
 AddCSLuaFile()
@@ -19,6 +19,14 @@ function ENT:Init(v, a)
     self[PROXY_FIELDS.VICTIM] = v
     self[PROXY_FIELDS.ATTACKER] = a
     self[PROXY_FIELDS.LAST_SIGHT_TIME] = 0
-    self[PROXY_FIELDS.LAST_SOUND_TIME] = 0
+
     self[PROXY_FIELDS.LAST_FACE_TIME] = 0
+
+    self[PROXY_FIELDS.SOUND_COUNTER] = 0
+    self[PROXY_FIELDS.LAST_SOUND_POS] = 0
+
+    self[PROXY_FIELDS.LAST_SOUND_EMIT_TIME] = 0
+    self[PROXY_FIELDS.LAST_SOUND_EMIT_ID] = 0
+    self[PROXY_FIELDS.LAST_SOUND_AUDIBLE_TIME] = 0
+    self[PROXY_FIELDS.LAST_SOUND_AUDIBLE_ID] = 0
 end

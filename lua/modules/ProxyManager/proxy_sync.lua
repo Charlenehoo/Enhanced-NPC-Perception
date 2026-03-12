@@ -39,7 +39,7 @@
     5. 基于 Source 引擎 AI 特性的行为引导与增强
        - 攻击者对距离 1024 单位内的敌人才会主动交战（COMBINE_RANGE 基于此设定）。超过此距离，即使武器具备远程射击能力（由武器 Base 定义），引擎也不会给予 NPC 远射的意愿，导致其不会攻击远处目标。
        - 本模块通过代理机制弥补这一缺陷：当受害者超出攻击者射程时（isRanged 分支），将代理置于攻击者前方 1024 单位处（沿攻击者到受害者的方向），使攻击者获得一个位于射程内的敌人，从而激发其交战意愿。此时 NPC 会向代理射击，而武器自身的弹道可能覆盖更远距离（取决于武器属性），最终可能命中远处的受害者或至少实现压制效果。
-       - 声音记忆（lastSoundTime）用于触发攻击者转向，但实际转向通过设置敌人（SetEnemy）和强制调度实现，避免依赖声音系统。
+       - 声音记忆（lastSoundTimeTime）用于触发攻击者转向，但实际转向通过设置敌人（SetEnemy）和强制调度实现，避免依赖声音系统。
 
     6. 代理位置微调（PROXY_OFFSET）
        在计算出目标位置（targetPos）后，最终设置代理位置时使用 `proxy:SetPos(targetPos - direction * PROXY_OFFSET)`，其中 PROXY_OFFSET = 2 单位。
@@ -53,6 +53,7 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
+local TravelDistManager        = TravelDistManager
 local PROXY_FIELDS             = ProxyManager.PROXY_FIELDS
 local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
 local SIGHT_MEMORY_DURATION    = ProxyManager.SIGHT_MEMORY_DURATION
@@ -98,27 +99,24 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         -- proxy:SetModelScale(0.4)
 
         -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
-        local lastSound      = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
-        local hasRecentSound = false
-        if lastSound and (currentTime - lastSound) <= SOUND_MEMORY_DURATION then
-            hasRecentSound = true
+        local lastSoundAudibleTime  = proxy[PROXY_FIELDS.LAST_SOUND_AUDIBLE_TIME] or 0
+        local hasRecentSound        = (currentTime - lastSoundAudibleTime) <= SOUND_MEMORY_DURATION
 
-            local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
-            if currentTime - lastFace >= FACE_COOLDOWN then
-                local curSched = attacker:GetCurrentSchedule()
-                if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
-                    if not IsValid(attacker:GetEnemy()) then
-                        attacker:SetEnemy(proxy)
-                        attacker:SetSchedule(SCHED_COMBAT_FACE)
-                        proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
-                    end
-                end
-            end
-        end
+        -- local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
+        -- if currentTime - lastFace >= FACE_COOLDOWN then
+        --     local curSched = attacker:GetCurrentSchedule()
+        --     if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
+        --         if not IsValid(attacker:GetEnemy()) then
+        --             attacker:SetEnemy(proxy)
+        --             attacker:SetSchedule(SCHED_COMBAT_FACE)
+        --             proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
+        --         end
+        --     end
+        -- end
 
-        local attackerShootPos = attacker:GetShootPos()
-        local distance = attackerShootPos:Distance(targetBonePos)
-        local isRanged = distance > COMBINE_RANGE
+        local attackerShootPos      = attacker:GetShootPos()
+        local distance              = attackerShootPos:Distance(targetBonePos)
+        local isRanged              = distance > COMBINE_RANGE
 
         local victimSideTraceResult = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
             start = targetBonePos,
@@ -126,9 +124,9 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             filter = victim,
             mask = MASK_SHOT -- https://wiki.facepunch.com/gmod/Enums/MASK
         })
-        local victimSideHitPos = victimSideTraceResult.HitPos
+        local victimSideHitPos      = victimSideTraceResult.HitPos
 
-        local isVisible = victimSideTraceResult.Entity == attacker
+        local isVisible             = victimSideTraceResult.Entity == attacker
 
         if isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
@@ -154,10 +152,8 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             local wallThickNess = attackerSideHitPos:Distance(victimSideHitPos)
 
             if wallThickNess > WALL_THICKNESS_THRESHOLD then
-                print("too thick" .. wallThickNess)
                 targetPos = targetBonePos
             else
-                print("not thick" .. wallThickNess)
                 if shouldCloseSuppress then
                     targetPos = attackerSideHitPos
                 else                              -- shouldRangedSuppress
