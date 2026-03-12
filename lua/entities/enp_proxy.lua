@@ -17,9 +17,10 @@ function ENT:Initialize() -- https://wiki.facepunch.com/gmod/ENTITY:Initialize
 end
 
 function ENT:Init(v, a)
-    self[PROXY_FIELDS.VICTIM] = v
-    self[PROXY_FIELDS.ATTACKER] = a
-    self[PROXY_FIELDS.LAST_SIGHT_TIME] = 0
-    self[PROXY_FIELDS.LAST_SOUND_TIME] = 0
-    self[PROXY_FIELDS.LAST_FACE_TIME] = 0
+    self[PROXY_FIELDS.VICTIM]           = v
+    self[PROXY_FIELDS.ATTACKER]         = a
+    self[PROXY_FIELDS.LAST_SIGHT_TIME]  = 0
+    self[PROXY_FIELDS.LAST_SOUND_TIME]  = 0
+    self[PROXY_FIELDS.LAST_FACE_TIME]   = 0
+    self[PROXY_FIELDS.LAST_SOUND_LEVEL] = nil
 end

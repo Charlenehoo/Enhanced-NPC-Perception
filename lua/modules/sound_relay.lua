@@ -175,7 +175,6 @@ hook.Add("EntityEmitSound", "ENP_EntityEmitSound", function(data)
     local proxies = GetProxiesByVictim(victim)
 
     for _, proxy in ipairs(proxies) do
-        proxy[PROXY_FIELDS.LAST_SOUND_TIME] = CurTime()
         proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = soundLevel
     end
 end)

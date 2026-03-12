@@ -16,7 +16,7 @@ ProxyManager.RAGDOLL_REMOVE_DELAY = 3
 ProxyManager.SIGHT_MEMORY_DURATION = 3
 ProxyManager.SOUND_MEMORY_DURATION = 3
 ProxyManager.FACE_COOLDOWN = 15
-ProxyManager.PROXY_OFFSET = 2
+ProxyManager.PROXY_OFFSET = 16
 ProxyManager.ATTACKER_RANGE = ProxyManager.PROXY_OFFSET + 1024
 
 ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX = "npc_combine"

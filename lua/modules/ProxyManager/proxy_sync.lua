@@ -193,8 +193,8 @@ local function IsPerceptive(victimPos, attackerPos, stableVictimPos, victim, att
         iter = iter + 1
         dir = (victimPos - startPos):GetNormalized() -- 更新方向（起点移动后）
 
-        local trace = util_TraceLine({
-            start = startPos + dir * epsilon, -- 沿方向微移，避免卡在同一表面
+        local trace = util_TraceLine({               -- https://wiki.facepunch.com/gmod/util.TraceLine
+            start = startPos + dir * epsilon,        -- 沿方向微移，避免卡在同一表面
             endpos = victimPos,
             filter = filter,
             mask = MASK_SHOT,
@@ -282,34 +282,42 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             continue -- Gmod 支持此关键字
         end
 
-        local attackerShootPos                                        = attacker:GetShootPos()
-        local distance                                                = attackerShootPos:Distance(targetBonePos)
-        local direction                                               = (targetBonePos - attackerShootPos):GetNormalized()
+        local attackerShootPos               = attacker:GetShootPos()
+        local distance                       = attackerShootPos:Distance(targetBonePos)
+        local direction                      = (targetBonePos - attackerShootPos):GetNormalized()
 
-        local isRanged                                                = distance > COMBINE_RANGE
+        local isRanged                       = distance > COMBINE_RANGE
 
         -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
-        local lastSoundTime                                           = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
-        local hasRecentSound                                          = (currentTime - lastSoundTime) <=
-            SOUND_MEMORY_DURATION
-        local lastSoundLevel                                          = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
+        -- local lastSoundTime    = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
+        -- local hasRecentSound   = (currentTime - lastSoundTime) <=
+        --     SOUND_MEMORY_DURATION
+        local lastSoundLevel                 = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
 
-        local spl                                                     = hasRecentSound and (lastSoundLevel or 0) or nil
-        local isVisible, isAudible, wallThickness, attackerSideHitPos = IsPerceptive(
+        local isVisible,
+        isAudible,
+        wallThickness,
+        attackerSideHitPos                   = IsPerceptive(
             targetBonePos,
             attackerShootPos,
             victim:EyePos(),
             victim,
             attacker,
-            spl
+            lastSoundLevel -- 可能为 nil ，代表本帧没有声音事件
         )
+
+        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = nil
 
         if isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
+        if isAudible then
+            proxy[PROXY_FIELDS.LAST_SOUND_TIME] = currentTime
+        end
 
         local hasRecentSight      = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
-        local hasRecentInfo       = (isAudible and hasRecentSound) or hasRecentSight
+        local hasRecentSound      = (currentTime - proxy[PROXY_FIELDS.LAST_SOUND_TIME]) <= SOUND_MEMORY_DURATION
+        local hasRecentInfo       = hasRecentSound or hasRecentSight
         local shouldSuppress      = not isVisible and hasRecentInfo
         local shouldCloseSuppress = shouldSuppress and not isRanged
 
@@ -317,7 +325,7 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local placementReason
 
         if shouldSuppress then
-            if isAudible then
+            if isAudible then -- 本帧可听，设置转向，只需本帧设置一次
                 local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
                 if currentTime - lastFace >= FACE_COOLDOWN then
                     local curSched = attacker:GetCurrentSchedule()
