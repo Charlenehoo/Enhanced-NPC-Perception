@@ -132,13 +132,12 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
 
-        local hasRecentSight       = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
-        local hasRecentInfo        = hasRecentSound or hasRecentSight
-        local shouldSuppress       = not isVisible and hasRecentInfo
-        local shouldCloseSuppress  = shouldSuppress and not isRanged
-        local shouldRangedSuppress = shouldSuppress and isRanged
+        local hasRecentSight      = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
+        local hasRecentInfo       = hasRecentSound or hasRecentSight
+        local shouldSuppress      = not isVisible and hasRecentInfo
+        local shouldCloseSuppress = shouldSuppress and not isRanged
 
-        local direction            = (targetBonePos - attackerShootPos):GetNormalized()
+        local direction           = (targetBonePos - attackerShootPos):GetNormalized()
 
         local targetPos
         if shouldSuppress then
@@ -156,12 +155,12 @@ function ProxyManager.SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             else
                 if shouldCloseSuppress then
                     targetPos = attackerSideHitPos
-                else                              -- shouldRangedSuppress
+                else                              -- shouldRangedSuppress = shouldSuppress and isRanged
                     targetPos = attackerShootPos +
                         direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
                 end
             end
-        elseif (isVisible and isRanged) or shouldRangedSuppress then
+        elseif isVisible and isRanged then
             targetPos = attackerShootPos + direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
         else
             targetPos = targetBonePos
