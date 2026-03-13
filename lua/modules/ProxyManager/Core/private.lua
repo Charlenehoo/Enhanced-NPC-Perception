@@ -178,8 +178,11 @@ end
 
 local function _MoveProxiesImpl(oldVictim, newVictim)
     -- 1. 参数有效性检查
-    if not IsValid(oldVictim) or not IsValid(newVictim) then return false end
-    if oldVictim == newVictim then return false end
+    if not IsValid(oldVictim) then return end
+    if not IsValid(newVictim) then return end
+    if oldVictim:GetClass() == PROXY_CLASS then return end
+    if newVictim:GetClass() == PROXY_CLASS then return end -- 防止递归
+    if oldVictim == newVictim then return end
 
     local oldAttackerProxyMap = _attackersByVictim[oldVictim]
     if not oldAttackerProxyMap then return false end -- 无可移动代理
@@ -212,7 +215,7 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
             if IsValid(proxy) then
                 proxy:Remove()
             end
-            -- 无需再处理 oldAttackerProxyMap 中的键（整个表即将被丢弃）
+            oldAttackerProxyMap[attacker] = nil
             continue -- Gmod 支持此关键字
         end
 
@@ -239,6 +242,7 @@ local function _MoveProxiesImpl(oldVictim, newVictim)
             _SetupRelationshipsVictim(newVictim, attacker)
         else
             -- 代理无效：根据事实来源（attacker 有效）重建代理
+            oldAttackerProxyMap[attacker] = nil
             _CreateProxyImpl(newVictim, attacker) -- 自动更新两个表
         end
     end
