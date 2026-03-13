@@ -18,7 +18,8 @@
 
 local ProxyManager = ProxyManager
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
-local DEBUG = ProxyManager.DEBUG
+-- local DEBUG = ProxyManager.DEBUG
+local DEBUG = false
 
 local IsValid = IsValid
 local CurTime = CurTime

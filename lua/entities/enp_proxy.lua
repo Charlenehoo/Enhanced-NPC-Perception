@@ -22,5 +22,5 @@ function ENT:Init(v, a)
     self[PROXY_FIELDS.LAST_SIGHT_TIME]  = 0
     self[PROXY_FIELDS.LAST_SOUND_TIME]  = 0
     self[PROXY_FIELDS.LAST_FACE_TIME]   = 0
-    self[PROXY_FIELDS.LAST_SOUND_LEVEL] = nil
+    self[PROXY_FIELDS.LAST_SOUND_LEVEL] = 0
 end

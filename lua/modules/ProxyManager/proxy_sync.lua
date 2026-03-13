@@ -55,18 +55,26 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
-local PROXY_FIELDS             = ProxyManager.PROXY_FIELDS
-local COMBINE_RANGE            = ProxyManager.ATTACKER_RANGE
-local SIGHT_MEMORY_DURATION    = ProxyManager.SIGHT_MEMORY_DURATION
-local SOUND_MEMORY_DURATION    = ProxyManager.SOUND_MEMORY_DURATION
-local FACE_COOLDOWN            = ProxyManager.FACE_COOLDOWN
-local WALL_THICKNESS_THRESHOLD = 256
-local PROXY_OFFSET             = ProxyManager.PROXY_OFFSET
-local DEBUG                    = ProxyManager.DEBUG
+local PROXY_CLASS               = ProxyManager.PROXY_CLASS
+local PROXY_FIELDS              = ProxyManager.PROXY_FIELDS
+local COMBINE_RANGE             = ProxyManager.ATTACKER_RANGE
+local SIGHT_MEMORY_DURATION     = ProxyManager.SIGHT_MEMORY_DURATION
+local SOUND_MEMORY_DURATION     = ProxyManager.SOUND_MEMORY_DURATION
+local FACE_COOLDOWN             = ProxyManager.FACE_COOLDOWN
+local WALL_THICKNESS_THRESHOLD  = 256
+local WALL_ATTENUATION_PER_UNIT = 0.1
+local HEAR_THRESHOLD            = 10
+local PROXY_OFFSET              = ProxyManager.PROXY_OFFSET
+local DEBUG                     = ProxyManager.DEBUG
 
-local IsValid                  = IsValid
-local CurTime                  = CurTime
-local util_TraceLine           = util.TraceLine
+local IsValid                   = IsValid
+local CurTime                   = CurTime
+local util_TraceLine            = util.TraceLine
+local MASK                      = MASK_VISIBLE
+
+local HULL_SIZE                 = 8 -- 半边长，即从 -2 到 2
+local hullMins                  = Vector(-HULL_SIZE / 2, -HULL_SIZE / 2, -HULL_SIZE / 2)
+local hullMaxs                  = Vector(HULL_SIZE / 2, HULL_SIZE / 2, HULL_SIZE / 2)
 
 -- 坐标量化辅助函数
 local function QuantizeVector(v, gridSize)
@@ -119,7 +127,7 @@ end
 --]]
 local function IsPerceptive(victimPos, attackerPos, stableVictimPos, victim, attacker, sourceSPL)
     local pairKey = victim:EntIndex() * 10000 + attacker:EntIndex()
-    local taskKey = GetPerceptionTaskKey(stableVictimPos, attackerPos, victim, attacker, sourceSPL, 64)
+    local taskKey = GetPerceptionTaskKey(stableVictimPos, attackerPos, victim, attacker, sourceSPL, 16)
     local shouldPrint = DEBUG and (_lastPrintKey[pairKey] ~= taskKey)
 
     if shouldPrint then
@@ -140,13 +148,26 @@ local function IsPerceptive(victimPos, attackerPos, stableVictimPos, victim, att
     local visTrace = util_TraceLine({
         start = attackerPos,
         endpos = victimPos,
-        filter = attacker, -- 排除攻击者，避免自遮挡
-        mask = MASK_SHOT,
+        -- maxs = hullMaxs,
+        -- mins = hullMins,
+        filter = attacker,
+        mask = MASK,
     })
 
     -- 视觉可见条件：射线直接命中受害者实体
     local isVisible = (visTrace.Entity == victim)
-    local firstHitPos = nil -- 默认无命中点
+    local firstHitPos = nil                                                     -- 默认无命中点
+
+    local engineLineOfSightClear = attacker:IsLineOfSightClear(victim:EyePos()) -- 用稳定位置测试
+    if shouldPrint then
+        local hitEntity = visTrace.Entity
+        local hitEntityInfo = "None"
+        if IsValid(hitEntity) then
+            hitEntityInfo = string.format("%s:%d", hitEntity:GetClass(), hitEntity:EntIndex())
+        end
+        MsgN("[Debug] Trace hit entity:", hitEntityInfo)
+        MsgN("[Debug] IsLineOfSightClear result:", engineLineOfSightClear, "vs our isVisible:", isVisible)
+    end
 
     -- 2. 若无声（sourceSPL 为 nil），则直接返回视觉结果，听觉为 false，墙厚为 0
     if sourceSPL == nil then
@@ -197,7 +218,7 @@ local function IsPerceptive(victimPos, attackerPos, stableVictimPos, victim, att
             start = startPos + dir * epsilon,        -- 沿方向微移，避免卡在同一表面
             endpos = victimPos,
             filter = filter,
-            mask = MASK_SHOT,
+            mask = MASK,
         })
 
         if trace.Hit then
@@ -282,31 +303,97 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             continue -- Gmod 支持此关键字
         end
 
-        local attackerShootPos               = attacker:GetShootPos()
-        local distance                       = attackerShootPos:Distance(targetBonePos)
-        local direction                      = (targetBonePos - attackerShootPos):GetNormalized()
+        local attackerShootPos   = attacker:GetShootPos()
+        local distance           = attackerShootPos:Distance(targetBonePos)
+        local direction          = (targetBonePos - attackerShootPos):GetNormalized()
 
+        local attackerSideTrace  = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
+            start = attackerShootPos,
+            endpos = targetBonePos,
+            filter = attacker,
+            mask = MASK_SHOT,
+        })
+        local attackerSideHitPos = attackerSideTrace.HitPos
+
+        local victimSideTrace    = util_TraceLine({
+            start = targetBonePos,
+            endpos = attackerShootPos,
+            filter = victim,
+            mask = MASK_SHOT,
+        })
+
+        local victimSideHitPos   = victimSideTrace.HitPos
+
+        local wallThickness      = attackerSideHitPos:Distance(victimSideHitPos)
+        local lastSoundLevel     = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
+        local distAtten          = 20 * math.log10(math.max(distance, 1))
+        local wallAtten          = wallThickness * WALL_ATTENUATION_PER_UNIT
+        local finalSoundLevel    = lastSoundLevel - distAtten - wallAtten
+
+        --[[
+            简单声学模型参数说明（修订版）
+            ================================
+            声源声压级（SPL）参考值（1米处）：
+            - 枪声：140 dB（对应 SNDLVL_140dB / SNDLVL_GUNFIRE，阈值痛觉）
+            - 跑步：75 dB（对应 SNDLVL_75dB / SNDLVL_NORM，繁忙交通）
+            - 走路：60 dB（对应 SNDLVL_60dB / SNDLVL_IDLE，正常交谈）
+            - 蹲走：50 dB（接近安静交谈，略高于图书馆环境）
+
+            墙体衰减系数：0.1 dB/单位（线性模型，即每游戏单位墙体厚度衰减0.1 dB）
+            可听阈值：10 dB（最终声压级高于10 dB才认为可听见，模拟环境背景噪音）
+
+            ================================================================================
+            一、自由声场最大可听距离（无墙，阈值10 dB）
+            --------------------------------------------------------------------------------
+            声源类型 | 源SPL (dB) | 最大可听距离 (单位)
+            ---------|------------|--------------------
+            枪声     | 140        | ≈ 3,162,278
+            跑步     | 75         | ≈ 1,778
+            走路     | 60         | ≈ 316
+            蹲走     | 50         | 100
+
+            注：枪声传播距离极大，实际游戏中几乎全图可闻；其他声音距离适中。
+
+            ================================================================================
+            二、典型交战距离下“恰能听到”的墙体厚度（阈值10 dB）
+            下表列出了在不同直线距离 D 处，要恰好让声音被听到（最终SPL = 10 dB）所需的墙体厚度（单位：游戏单位）。
+            负值表示即使无墙也无法听到（距离衰减已使声压级低于10 dB）。
+
+            距离 D   | 枪声 (140 dB) | 跑步 (75 dB) | 走路 (60 dB) | 蹲走 (50 dB)
+            ---------|---------------|--------------|--------------|---------------
+            200      | 839.8         | 189.8        | 39.8         | -60.2
+            300      | 804.6         | 154.6        | 4.6          | -95.4
+            400      | 779.6         | 129.6        | -20.4        | -120.4
+            500      | 760.2         | 110.2        | -39.8        | -139.8
+            600      | 744.4         | 94.4         | -55.6        | -155.6
+
+            解读：
+            - 枪声穿透力极强，在300单位距离时仍可穿透约805单位厚的墙。
+            - 跑步声在300单位时可穿透约155单位厚墙，适合压制厚墙后的敌人。
+            - 走路声在300单位时仅能穿透约5单位厚墙，轻微遮挡即可屏蔽。
+            - 蹲走声在所有距离超过约180单位后即无法听到，仅在极近距离可能被听到。
+
+            参数调整建议：
+            - 若需增强蹲走战术价值，可将其SPL提高至55 dB，或降低阈值至5 dB。
+            - 墙体衰减系数0.1可根据游戏节奏微调。
+            - 阈值10 dB模拟了背景噪音，若需更灵敏听觉可降至5 dB。
+
+            使用示例：
+            local function isSoundAudible(attackerPos, targetPos, wallThickness, soundLevel)
+                if not soundLevel or soundLevel <= 0 then return false end
+                local dist = attackerPos:Distance(targetPos)
+                local distAtten = 20 * math.log10(math.max(dist, 1))
+                local wallAtten = wallThickness * 0.1
+                local finalSPL = soundLevel - distAtten - wallAtten
+                return finalSPL > 10
+            end
+        ]]
+
+        local isAudible                      = finalSoundLevel > HEAR_THRESHOLD
+        local isVisible                      = attacker:Visible(victim)
         local isRanged                       = distance > COMBINE_RANGE
 
-        -- 新增声音中继逻辑，见 lua/modules/sound_relay.lua
-        -- local lastSoundTime    = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
-        -- local hasRecentSound   = (currentTime - lastSoundTime) <=
-        --     SOUND_MEMORY_DURATION
-        local lastSoundLevel                 = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
-
-        local isVisible,
-        isAudible,
-        wallThickness,
-        attackerSideHitPos                   = IsPerceptive(
-            targetBonePos,
-            attackerShootPos,
-            victim:EyePos(),
-            victim,
-            attacker,
-            lastSoundLevel -- 可能为 nil ，代表本帧没有声音事件
-        )
-
-        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = nil
+        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = 0
 
         if isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
