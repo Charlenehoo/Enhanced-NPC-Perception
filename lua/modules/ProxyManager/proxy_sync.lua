@@ -72,217 +72,179 @@ local IsValid                       = IsValid
 local CurTime                       = CurTime
 local util_TraceLine                = util.TraceLine
 
-local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
-    local currentTime = CurTime()
-
+-- 辅助函数：获取受害者的目标位置（骨骼循环）
+local function GetTargetPosition(victim)
     ProxyManager.InitializeBoneCache(victim)
 
     local targetBonePos
     local boneCache = ProxyManager.boneCacheTable[victim]
     if boneCache and #boneCache > 0 then
-        local loopCount = ProxyManager.loopCountTable[victim] or 0 -- 0 ~ #boneCache
-        local boneIndex = loopCount % #boneCache + 1               -- 1 ~ #boneCache
+        local loopCount = ProxyManager.loopCountTable[victim] or 0
+        local boneIndex = loopCount % #boneCache + 1
         ProxyManager.loopCountTable[victim] = boneIndex
-        targetBonePos, _ = victim:GetBonePosition(boneIndex)       -- https://wiki.facepunch.com/gmod/Entity:GetBonePosition
+        targetBonePos, _ = victim:GetBonePosition(boneIndex)
     else
-        targetBonePos = victim:EyePos()                            -- 降级
+        targetBonePos = victim:EyePos()
     end
+    return targetBonePos
+end
+
+-- 计算与时间无关的基础数据（方向、墙厚、可视、可听、距离等）
+local function ComputeBaseData(attacker, victim, targetPos, lastSoundLevel)
+    local attackerShootPos = attacker:GetShootPos()
+    local distance = attackerShootPos:Distance(targetPos)
+    local direction = (targetPos - attackerShootPos):GetNormalized()
+
+    -- 从攻击者到受害者的射线
+    local attackerTrace = util_TraceLine({
+        start = attackerShootPos,
+        endpos = targetPos,
+        filter = attacker,
+        mask = MASK_SHOT,
+    })
+    local attackerSideHitPos = attackerTrace.HitPos
+
+    -- 从受害者到攻击者的反向射线（计算墙厚）
+    local victimTrace = util_TraceLine({
+        start = targetPos,
+        endpos = attackerShootPos,
+        filter = victim,
+        mask = MASK_SHOT,
+    })
+    local wallThickness = attackerSideHitPos:Distance(victimTrace.HitPos)
+
+    -- 声学计算
+    local distAtten = 20 * math.log10(math.max(distance, 1))
+    local wallAtten = wallThickness * WALL_ATTENUATION_PER_UNIT
+    local finalSoundLevel = lastSoundLevel - distAtten - wallAtten
+    local isAudible = finalSoundLevel > HEAR_THRESHOLD
+
+    -- 视觉检测
+    local isVisible = attacker:Visible(victim)
+
+    -- 距离是否超出交战范围
+    local isRanged = distance > COMBINE_RANGE
+
+    return {
+        isVisible = isVisible,
+        isAudible = isAudible,
+        isRanged = isRanged,
+        direction = direction,
+        wallThickness = wallThickness,
+        attackerShootPos = attackerShootPos,
+        attackerSideHitPos = attackerSideHitPos,
+        distance = distance,
+    }
+end
+
+-- 根据标志决策代理放置位置（完全复制旧实现逻辑）
+local function DecideProxyPlacement(attacker, base, targetPos, shouldSuppress, isVisible, isRanged)
+    if shouldSuppress then
+        if base.wallThickness > WALL_THICKNESS_THRESHOLD then
+            return targetPos, "thick wall, proxy at victim"
+        else
+            local distToHit = base.attackerShootPos:Distance(base.attackerSideHitPos)
+            if distToHit < COMBINE_RANGE then
+                return base.attackerSideHitPos, "thin wall, close suppress"
+            else
+                return base.attackerShootPos + base.direction * COMBINE_RANGE, "thin wall, ranged suppress"
+            end
+        end
+    elseif isVisible and isRanged then
+        return base.attackerShootPos + base.direction * COMBINE_RANGE, "visible out of range"
+    else
+        return targetPos, "default (visible & in-range or no info)"
+    end
+end
+
+-- 调试状态更新函数（与原逻辑完全一致）
+local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound,
+                                     hasRecentInfo, shouldSuppress, reason)
+    if not DEBUG then return end
+    if not proxy._debugState then proxy._debugState = {} end
+    local oldState = proxy._debugState
+    local newState = {
+        isVisible = base.isVisible,
+        isAudible = base.isAudible,
+        hasRecentSight = hasRecentSight,
+        hasRecentSound = hasRecentSound,
+        hasRecentInfo = hasRecentInfo,
+        shouldSuppress = shouldSuppress,
+        isRanged = base.isRanged,
+        placementReason = reason,
+    }
+    local stateChanged = false
+    for k, v in pairs(newState) do
+        if oldState[k] ~= v then
+            stateChanged = true
+            break
+        end
+    end
+    if stateChanged then
+        MsgN("=====" .. currentTime .. "=====")
+        MsgN(string.format(
+            "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s, placementReason=%s",
+            attacker:EntIndex(), victim:EntIndex(),
+            tostring(base.isVisible), tostring(base.isAudible), base.wallThickness,
+            tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
+            tostring(shouldSuppress), tostring(base.isRanged),
+            tostring(reason)))
+        MsgN("==========")
+        proxy._debugState = newState
+    end
+end
+
+-- 主同步函数（完全保持旧实现的顺序和行为）
+local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
+    local currentTime = CurTime()
+    local targetPos = GetTargetPosition(victim)
 
     for attacker, proxy in attackerProxyMapView.GetIterator() do
-        local isOrphan = ProxyManager.CheckOrphanProxy(proxy)
-        if isOrphan then
-            -- 安全说明：此循环遍历 attackerProxyMapView（键为 attacker，值为 proxy）。
-            -- 循环体内调用 ProxyManager.CheckOrphanProxy(proxy) 检查代理是否孤儿。
-            -- 若代理无效，CheckOrphanProxy 会调用 ProxyManager.RemoveProxy(proxy.victim, proxy.attacker)，
-            -- 该函数从内部表 _attackersByVictim[victim] 中移除键 attacker，即当前迭代的键。
-            -- 在 Lua 的 next/pairs 遍历中，删除当前迭代的键是安全的，不会导致跳过或重复。
-            -- 警告：请勿在此循环中删除任何其他键（非当前 attacker），否则可能破坏迭代器状态。
-            -- 若将来需要删除其他键，请改用“先收集键，后删除”模式。
-            continue -- Gmod 支持此关键字
-        end
+        -- 孤儿检查（安全删除当前键）
+        if ProxyManager.CheckOrphanProxy(proxy) then continue end
 
-        local attackerShootPos   = attacker:GetShootPos()
-        local distance           = attackerShootPos:Distance(targetBonePos)
-        local direction          = (targetBonePos - attackerShootPos):GetNormalized()
+        -- 直接从 proxy 读取旧值（无默认值，与旧实现一致）
+        local lastSoundLevel = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
 
-        local attackerSideTrace  = util_TraceLine({ -- https://wiki.facepunch.com/gmod/util.TraceLine
-            start = attackerShootPos,
-            endpos = targetBonePos,
-            filter = attacker,
-            mask = MASK_SHOT,
-        })
-        local attackerSideHitPos = attackerSideTrace.HitPos
+        -- 1. 计算基础数据（依赖 lastSoundLevel，但不依赖记忆时间）
+        local base = ComputeBaseData(attacker, victim, targetPos, lastSoundLevel)
 
-        local victimSideTrace    = util_TraceLine({
-            start = targetBonePos,
-            endpos = attackerShootPos,
-            filter = victim,
-            mask = MASK_SHOT,
-        })
-
-        local victimSideHitPos   = victimSideTrace.HitPos
-
-        local wallThickness      = attackerSideHitPos:Distance(victimSideHitPos)
-        local lastSoundLevel     = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
-        local distAtten          = 20 * math.log10(math.max(distance, 1))
-        local wallAtten          = wallThickness * WALL_ATTENUATION_PER_UNIT
-        local finalSoundLevel    = lastSoundLevel - distAtten - wallAtten
-
-        --[[
-            简单声学模型参数说明（修订版）
-            ================================
-            声源声压级（SPL）参考值（1米处）：
-            - 枪声：140 dB（对应 SNDLVL_140dB / SNDLVL_GUNFIRE，阈值痛觉）
-            - 跑步：75 dB（对应 SNDLVL_75dB / SNDLVL_NORM，繁忙交通）
-            - 走路：60 dB（对应 SNDLVL_60dB / SNDLVL_IDLE，正常交谈）
-            - 蹲走：50 dB（接近安静交谈，略高于图书馆环境）
-
-            墙体衰减系数：0.1 dB/单位（线性模型，即每游戏单位墙体厚度衰减0.1 dB）
-            可听阈值：10 dB（最终声压级高于10 dB才认为可听见，模拟环境背景噪音）
-
-            ================================================================================
-            一、自由声场最大可听距离（无墙，阈值10 dB）
-            --------------------------------------------------------------------------------
-            声源类型 | 源SPL (dB) | 最大可听距离 (单位)
-            ---------|------------|--------------------
-            枪声     | 140        | ≈ 3,162,278
-            跑步     | 75         | ≈ 1,778
-            走路     | 60         | ≈ 316
-            蹲走     | 50         | 100
-
-            注：枪声传播距离极大，实际游戏中几乎全图可闻；其他声音距离适中。
-
-            ================================================================================
-            二、典型交战距离下“恰能听到”的墙体厚度（阈值10 dB）
-            下表列出了在不同直线距离 D 处，要恰好让声音被听到（最终SPL = 10 dB）所需的墙体厚度（单位：游戏单位）。
-            负值表示即使无墙也无法听到（距离衰减已使声压级低于10 dB）。
-
-            距离 D   | 枪声 (140 dB) | 跑步 (75 dB) | 走路 (60 dB) | 蹲走 (50 dB)
-            ---------|---------------|--------------|--------------|---------------
-            200      | 839.8         | 189.8        | 39.8         | -60.2
-            300      | 804.6         | 154.6        | 4.6          | -95.4
-            400      | 779.6         | 129.6        | -20.4        | -120.4
-            500      | 760.2         | 110.2        | -39.8        | -139.8
-            600      | 744.4         | 94.4         | -55.6        | -155.6
-
-            解读：
-            - 枪声穿透力极强，在300单位距离时仍可穿透约805单位厚的墙。
-            - 跑步声在300单位时可穿透约155单位厚墙，适合压制厚墙后的敌人。
-            - 走路声在300单位时仅能穿透约5单位厚墙，轻微遮挡即可屏蔽。
-            - 蹲走声在所有距离超过约180单位后即无法听到，仅在极近距离可能被听到。
-
-            参数调整建议：
-            - 若需增强蹲走战术价值，可将其SPL提高至55 dB，或降低阈值至5 dB。
-            - 墙体衰减系数0.1可根据游戏节奏微调。
-            - 阈值10 dB模拟了背景噪音，若需更灵敏听觉可降至5 dB。
-
-            使用示例：
-            local function isSoundAudible(attackerPos, targetPos, wallThickness, soundLevel)
-                if not soundLevel or soundLevel <= 0 then return false end
-                local dist = attackerPos:Distance(targetPos)
-                local distAtten = 20 * math.log10(math.max(dist, 1))
-                local wallAtten = wallThickness * 0.1
-                local finalSPL = soundLevel - distAtten - wallAtten
-                return finalSPL > 10
-            end
-        ]]
-
-        local isAudible                      = finalSoundLevel > HEAR_THRESHOLD
-        local isVisible                      = attacker:Visible(victim)
-        local isRanged                       = distance > COMBINE_RANGE
-
-        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = 0
-
-        if isVisible then
+        -- 2. 更新记忆时间（先更新，后计算标志，与旧实现顺序一致）
+        if base.isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
-        if isAudible then
+        if base.isAudible then
             proxy[PROXY_FIELDS.LAST_SOUND_TIME] = currentTime
         end
+        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = 0
 
-        local hasRecentSight = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_INFO_CERTAINTY_DURATION
-        local hasRecentSound = (currentTime - proxy[PROXY_FIELDS.LAST_SOUND_TIME]) <= SOUND_INFO_CERTAINTY_DURATION
-        local hasRecentInfo  = hasRecentSound or hasRecentSight
-        local shouldSuppress = not isVisible and hasRecentInfo
+        -- 3. 计算记忆标志（使用更新后的时间）
+        local lastSightTime = proxy[PROXY_FIELDS.LAST_SIGHT_TIME]
+        local lastSoundTime = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
+        local hasRecentSight = (currentTime - lastSightTime) <= SIGHT_INFO_CERTAINTY_DURATION
+        local hasRecentSound = (currentTime - lastSoundTime) <= SOUND_INFO_CERTAINTY_DURATION
+        local hasRecentInfo = hasRecentSound or hasRecentSight
+        local shouldSuppress = not base.isVisible and hasRecentInfo
 
-        local targetPos
-        local placementReason
+        -- 4. 决策代理放置位置
+        local placementTarget, reason = DecideProxyPlacement(
+            attacker, base, targetPos,
+            shouldSuppress, base.isVisible, base.isRanged
+        )
 
-        if shouldSuppress then
-            if wallThickness > WALL_THICKNESS_THRESHOLD then
-                targetPos = targetBonePos
-                placementReason = "thick wall, proxy at victim"
-            else
-                if attackerShootPos:Distance(attackerSideHitPos) < COMBINE_RANGE then
-                    targetPos = attackerSideHitPos
-                    placementReason = "thin wall, close suppress"
-                else
-                    targetPos = attackerShootPos +
-                        direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
-                    placementReason = "thin wall, ranged suppress"
-                end
-            end
-        elseif isVisible and isRanged then
-            targetPos = attackerShootPos + direction * COMBINE_RANGE
-            placementReason = "visible out of range"
-        else
-            targetPos = targetBonePos
-            placementReason = "default (visible & in-range or no info)"
-        end
-
+        -- 5. 设置敌人记忆（与旧实现一致）
         if hasRecentInfo then
             attacker:SetEnemy(proxy)
             attacker:UpdateEnemyMemory(proxy, proxy:GetPos())
-        else
-            -- attacker:ClearEnemyMemory(proxy)
         end
 
-        -- 获取或初始化代理的调试状态表
-        if not proxy._debugState then
-            proxy._debugState = {}
-        end
-        local oldState = proxy._debugState
+        -- 6. 调试输出（完全复制旧实现的变量引用）
+        UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound, hasRecentInfo,
+            shouldSuppress, reason)
 
-        -- 构建当前状态表（用于检测变化）
-        local newState = {
-            isVisible = isVisible,
-            isAudible = isAudible,
-            hasRecentSight = hasRecentSight,
-            hasRecentSound = hasRecentSound,
-            hasRecentInfo = hasRecentInfo,
-            shouldSuppress = shouldSuppress,
-            isRanged = isRanged,
-            placementReason = placementReason,
-        }
-
-        -- 状态变化时打印完整调试信息
-        if DEBUG then
-            -- 检测状态是否发生变化
-            local stateChanged = false
-            for k, v in pairs(newState) do
-                if oldState[k] ~= v then
-                    stateChanged = true
-                    break
-                end
-            end
-
-            if stateChanged then
-                MsgN("=====" .. currentTime .. "=====")
-                MsgN(string.format(
-                    "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s, placementReason=%s",
-                    attacker:EntIndex(), victim:EntIndex(),
-                    tostring(isVisible), tostring(isAudible), wallThickness,
-                    tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
-                    tostring(shouldSuppress), tostring(isRanged),
-                    tostring(placementReason)))
-                MsgN("==========")
-                -- 更新存储的状态
-                proxy._debugState = newState
-            end
-        end
-
-        proxy:SetPos(targetPos - direction * PROXY_OFFSET)
-        proxy:SetAngles(direction:Angle())
+        -- 7. 设置代理位置和角度
+        proxy:SetPos(placementTarget - base.direction * PROXY_OFFSET)
+        proxy:SetAngles(base.direction:Angle())
     end
 end
 
