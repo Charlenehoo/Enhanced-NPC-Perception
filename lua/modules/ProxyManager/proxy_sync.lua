@@ -157,7 +157,7 @@ local function DecideProxyPlacement(base, targetPos, shouldSuppress, isVisible, 
     end
 end
 
--- 调试状态更新函数（与原逻辑完全一致）
+-- 调试状态更新函数（检测变化并突出显示）
 local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound,
                                      hasRecentInfo, shouldSuppress, reason)
     if not DEBUG then return end
@@ -173,23 +173,40 @@ local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
         isRanged = base.isRanged,
         placementReason = reason,
     }
-    local stateChanged = false
+
+    -- 收集变化的字段
+    local changes = {}
     for k, v in pairs(newState) do
         if oldState[k] ~= v then
-            stateChanged = true
-            break
+            changes[k] = { old = oldState[k], new = v }
         end
     end
-    if stateChanged then
-        MsgN("=====" .. currentTime .. "=====")
-        MsgN(string.format(
-            "[ProxySync] Attacker[%d] -> Victim[%d]: isVisible=%s, isAudible=%s, wallThickness=%.2f, hasRecentSight=%s, hasRecentSound=%s, hasRecentInfo=%s, shouldSuppress=%s, isRanged=%s, placementReason=%s",
-            attacker:EntIndex(), victim:EntIndex(),
-            tostring(base.isVisible), tostring(base.isAudible), base.wallThickness,
-            tostring(hasRecentSight), tostring(hasRecentSound), tostring(hasRecentInfo),
-            tostring(shouldSuppress), tostring(base.isRanged),
-            tostring(reason)))
-        MsgN("==========")
+
+    if next(changes) then -- 有变化才打印
+        print("========== [代理同步] ==========")
+        print(string.format("攻击者: [%d] %s", attacker:EntIndex(), attacker:GetClass()))
+        print(string.format("受害者: [%d] %s", victim:EntIndex(), victim:GetClass()))
+        print(string.format("当前时间: %.2f", currentTime))
+
+        -- 突出显示变化字段
+        print("--- 变化字段 ---")
+        for k, change in pairs(changes) do
+            print(string.format("%s: %s -> %s", k, tostring(change.old), tostring(change.new)))
+        end
+
+        -- 打印完整状态（可选，便于查看上下文）
+        print("--- 完整状态 ---")
+        print(string.format("视觉可见: %s", tostring(base.isVisible)))
+        print(string.format("听觉可听: %s", tostring(base.isAudible)))
+        print(string.format("墙体厚度: %.2f 单位", base.wallThickness))
+        print(string.format("最近视觉记忆: %s", tostring(hasRecentSight)))
+        print(string.format("最近听觉记忆: %s", tostring(hasRecentSound)))
+        print(string.format("拥有信息: %s", tostring(hasRecentInfo)))
+        print(string.format("压制状态: %s", tostring(shouldSuppress)))
+        print(string.format("超出范围: %s", tostring(base.isRanged)))
+        print(string.format("放置原因: %s", tostring(reason)))
+        print("================================\n")
+
         proxy._debugState = newState
     end
 end
