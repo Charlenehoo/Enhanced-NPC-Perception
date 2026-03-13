@@ -65,12 +65,20 @@ local FACE_COOLDOWN                 = ProxyManager.FACE_COOLDOWN
 local WALL_THICKNESS_THRESHOLD      = 256
 local WALL_ATTENUATION_PER_UNIT     = 0.1
 local HEAR_THRESHOLD                = 10
+local SOUND_CERTAINTY_BASE          = 0.6
+local VEC_UP                        = Vector(0, 0, 1)
+local MAX_JITTER                    = 64
+local HORIZONTAL_FACTOR             = 1.0
+local VERTICAL_FACTOR               = 0.2
+
 local PROXY_OFFSET                  = ProxyManager.PROXY_OFFSET
 local DEBUG                         = ProxyManager.DEBUG
 
 local IsValid                       = IsValid
 local CurTime                       = CurTime
 local util_TraceLine                = util.TraceLine
+
+
 
 -- 辅助函数：获取受害者的目标位置（骨骼循环）
 local function GetTargetPosition(victim)
@@ -135,6 +143,69 @@ local function ComputeBaseData(attacker, victim, targetPos, lastSoundLevel)
         attackerSideHitPos = attackerSideHitPos,
         distance = distance,
     }
+end
+
+local function ComputeConfidence(proxy, base, currentTime)
+    local lastSight = proxy[PROXY_FIELDS.LAST_SIGHT_TIME] or 0
+    local lastSound = proxy[PROXY_FIELDS.LAST_SOUND_TIME] or 0
+    local sightDur = SIGHT_INFO_CERTAINTY_DURATION
+    local soundDur = SOUND_INFO_CERTAINTY_DURATION
+    local soundBase = SOUND_CERTAINTY_BASE
+
+    -- 视觉置信度
+    local visualConf
+    if base.isVisible then
+        visualConf = 1
+    else
+        local timeSinceSight = currentTime - lastSight
+        visualConf = math.max(0, 1 - timeSinceSight / sightDur)
+    end
+
+    -- 听觉置信度
+    local audioConf
+    if base.isAudible then
+        audioConf = soundBase
+    else
+        local timeSinceSound = currentTime - lastSound
+        audioConf = math.max(0, soundBase * (1 - timeSinceSound / soundDur))
+    end
+
+    return math.max(visualConf, audioConf)
+end
+
+
+local function ComputeJitteredPosition(basePos, direction, confidence)
+    local maxJitter = MAX_JITTER * (1 - math.Clamp(confidence, 0, 1))
+    if maxJitter <= 0 then return basePos end
+
+    -- 在单位圆内均匀分布（面积均匀）
+    local angle = math.random() * 2 * math.pi
+    local radius = math.sqrt(math.random())
+
+    -- 检查视线是否几乎垂直（与 VEC_UP 夹角很小）
+    local dirNorm = direction:GetNormalized()
+    local dotUp = math.abs(dirNorm:Dot(VEC_UP))
+    if dotUp > 0.99 then
+        -- 视线近乎竖直：偏移在水平面内圆形均匀
+        local offset = Vector(
+            radius * math.cos(angle) * maxJitter,
+            radius * math.sin(angle) * maxJitter,
+            0
+        )
+        return basePos + offset
+    else
+        -- 正常情况：构建垂直于视线的平面基向量
+        -- right：水平向右（垂直于视线和世界向上）
+        local right = direction:Cross(VEC_UP):GetNormalized()
+        -- up：垂直于视线的垂直方向（在视线与 right 构成的平面内）
+        local up = direction:Cross(right):GetNormalized()
+
+        -- 应用椭圆比例
+        local hOffset = radius * math.cos(angle) * HORIZONTAL_FACTOR
+        local vOffset = radius * math.sin(angle) * VERTICAL_FACTOR
+        local offset = right * (hOffset * maxJitter) + up * (vOffset * maxJitter)
+        return basePos + offset
+    end
 end
 
 -- 根据标志决策代理放置位置（完全复制旧实现逻辑）
@@ -217,49 +288,42 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local targetPos = GetTargetPosition(victim)
 
     for attacker, proxy in attackerProxyMapView.GetIterator() do
-        -- 孤儿检查（安全删除当前键）
         if ProxyManager.CheckOrphanProxy(proxy) then continue end
-
-        -- 直接从 proxy 读取旧值（无默认值，与旧实现一致）
         local lastSoundLevel = proxy[PROXY_FIELDS.LAST_SOUND_LEVEL]
-
-        -- 1. 计算基础数据（依赖 lastSoundLevel，但不依赖记忆时间）
         local base = ComputeBaseData(attacker, victim, targetPos, lastSoundLevel)
 
-        -- 2. 更新记忆时间（先更新，后计算标志，与旧实现顺序一致）
         if base.isVisible then
             proxy[PROXY_FIELDS.LAST_SIGHT_TIME] = currentTime
         end
         if base.isAudible then
             proxy[PROXY_FIELDS.LAST_SOUND_TIME] = currentTime
         end
+
         proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = 0
 
-        -- 3. 计算记忆标志（使用更新后的时间）
-        local lastSightTime = proxy[PROXY_FIELDS.LAST_SIGHT_TIME]
-        local lastSoundTime = proxy[PROXY_FIELDS.LAST_SOUND_TIME]
-        local hasRecentSight = (currentTime - lastSightTime) <= SIGHT_INFO_CERTAINTY_DURATION
-        local hasRecentSound = (currentTime - lastSoundTime) <= SOUND_INFO_CERTAINTY_DURATION
-        local hasRecentInfo = hasRecentSound or hasRecentSight
+        local confidence = ComputeConfidence(proxy, base, currentTime)
+        proxy[PROXY_FIELDS.CONFIDENCE] = confidence
+
+        local hasRecentInfo = confidence > 0
         local shouldSuppress = not base.isVisible and hasRecentInfo
 
-        -- 4. 决策代理放置位置
         local placementTarget, reason = DecideProxyPlacement(
             base, targetPos, shouldSuppress, base.isVisible, base.isRanged
         )
 
-        -- 5. 设置敌人记忆（与旧实现一致）
+        local idealPos = placementTarget - base.direction * PROXY_OFFSET
+        local finalPos = ComputeJitteredPosition(idealPos, base.direction, confidence)
+
         if hasRecentInfo then
             attacker:SetEnemy(proxy)
             attacker:UpdateEnemyMemory(proxy, proxy:GetPos())
         end
 
-        -- 6. 调试输出（完全复制旧实现的变量引用）
         UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound, hasRecentInfo,
             shouldSuppress, reason)
 
         -- 7. 设置代理位置和角度
-        proxy:SetPos(placementTarget - base.direction * PROXY_OFFSET)
+        proxy:SetPos(finalPos)
         proxy:SetAngles(base.direction:Angle())
     end
 end
