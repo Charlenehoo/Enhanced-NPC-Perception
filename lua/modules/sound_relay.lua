@@ -18,11 +18,29 @@
 
 local ProxyManager = ProxyManager
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
--- local DEBUG = ProxyManager.DEBUG
-local DEBUG = false
+local DEBUG = ProxyManager.DEBUG
+-- local DEBUG = true
+
+local HEAR_THRESHOLD = 10
+local WALL_ATTEN_PER_UNIT = 0.1
 
 local IsValid = IsValid
 local CurTime = CurTime
+
+-- 声道名称映射（基于官方 CHAN 枚举）
+local channelNames = {
+    [-1]  = "CHAN_REPLACE",
+    [0]   = "CHAN_AUTO",
+    [1]   = "CHAN_WEAPON",
+    [2]   = "CHAN_VOICE",
+    [3]   = "CHAN_ITEM",
+    [4]   = "CHAN_BODY",
+    [5]   = "CHAN_STREAM",
+    [6]   = "CHAN_STATIC",
+    [7]   = "CHAN_VOICE2",
+    [8]   = "CHAN_VOICE_BASE",
+    [136] = "CHAN_USER_BASE",
+}
 
 -- 用于存储上一次打印事件的唯一标识
 local lastPrintKey = nil
@@ -53,25 +71,17 @@ local function DebugSoundPrinter(data, finalLevel)
         playerSpeed = vel:Length() -- 速度大小，单位：游戏单位/秒
     end
 
-    -- 声道名称映射（基于官方 CHAN 枚举）
-    local channelNames = {
-        [-1]  = "CHAN_REPLACE",
-        [0]   = "CHAN_AUTO",
-        [1]   = "CHAN_WEAPON",
-        [2]   = "CHAN_VOICE",
-        [3]   = "CHAN_ITEM",
-        [4]   = "CHAN_BODY",
-        [5]   = "CHAN_STREAM",
-        [6]   = "CHAN_STATIC",
-        [7]   = "CHAN_VOICE2",
-        [8]   = "CHAN_VOICE_BASE",
-        [136] = "CHAN_USER_BASE",
-    }
     local channelName = channelNames[channel] or string.format("未知(%d)", channel)
 
-    -- 用最终声压级计算理论最大传播距离（公式：D = 2^(L/5) 单位）
-    local maxDistUnits = 2 ^ (finalLevel / 5)
-    local maxDistMeters = maxDistUnits * 0.0254
+    local maxWallThickness = 0
+    if originalLevel and originalLevel > HEAR_THRESHOLD then
+        maxWallThickness = (originalLevel - HEAR_THRESHOLD) / WALL_ATTEN_PER_UNIT
+    else
+        maxWallThickness = 0
+    end
+
+    -- 用最终声压级计算理论最大传播距离（无墙，阈值 HEAR_THRESHOLD dB）
+    local maxDistUnits = 10 ^ ((finalLevel - HEAR_THRESHOLD) / 20)
 
     -- 构建唯一标识，包含速度（如果存在）以防止刷屏，同时速度变化会触发新打印
     -- 注意：如果最终声压级与原始不同，可能仍会打印，但为了简单，我们仍用原始信息生成 key
@@ -106,19 +116,15 @@ local function DebugSoundPrinter(data, finalLevel)
     print("音量:     " .. tostring(volume))
     print("标志:     " .. tostring(flags))
     print("DSP:      " .. tostring(dsp))
-    print("理论最大传播距离: " .. string.format("%.0f 单位 (≈ %.2f 米)", maxDistUnits, maxDistMeters))
+    print("理论最大传播距离: " .. string.format("%.0f 单位", maxDistUnits))
+    print("理论最大穿墙厚度: " .. string.format("%.0f 单位", maxWallThickness))
     print("================================\n")
 end
 
-local function GetProxiesByVictim(victim)
-    local proxies = {}
-    local view = ProxyManager.GetAttackerProxyMapView(victim)
-    if view then
-        for attacker, proxy in view.GetIterator() do
-            table.insert(proxies, proxy)
-        end
-    end
-    return proxies
+local function GetFootstepSPLFromSpeed(speed)
+    local v = math.max(speed, 1)
+    local spl = 33 * math.log10(v)
+    return math.min(spl, 85)
 end
 
 
@@ -146,28 +152,46 @@ hook.Add("EntityEmitSound", "ENP_EntityEmitSound", function(data)
         return
     end
 
-    -- 确定最终记录的声压级
-    local soundLevel = data.SoundLevel
-    local soundName = data.SoundName or ""
-
-    -- 启发式判断是否为武器声音
-    local isWeaponSound = false
-    -- 检查声道（武器声音通常在 CHAN_WEAPON 或自定义武器声道）
-    if data.Channel == 1 then -- CHAN_WEAPON
-        isWeaponSound = true
-    end
-    -- 检查文件名关键词（不区分大小写）
-    local lowerName = soundName:lower()
-    local weaponKeywords = { "fire", "shot", "gun", "weapon", "rifle", "pistol", "shoot", "bullet", "m4a1", "ak" }
+    local lowerName = (data.SoundName or ""):lower()
+    local weaponKeywords = { "m4a1", "ak74", "weapon" }
+    local isWeaponByName = false
     for _, kw in ipairs(weaponKeywords) do
         if lowerName:find(kw, 1, true) then
-            isWeaponSound = true
+            isWeaponByName = true
             break
         end
     end
 
-    -- 如果是武器声音且声压级为0或过低，则强制设为140 dB
-    if isWeaponSound then soundLevel = 140 end -- SNDLVL_GUNFIRE
+    local footstepKeywords = { "step", "foot", "run", "walk", "sneak" }
+    local isFootstepByName = false
+    for _, kw in ipairs(footstepKeywords) do
+        if lowerName:find(kw, 1, true) then
+            isFootstepByName = true
+            break
+        end
+    end
+
+    local isRelevant = (data.Channel == 1 or isWeaponByName) or
+        (data.Channel == 4 or isFootstepByName) or
+        (data.Channel == CHAN_VOICE) or (data.Channel == CHAN_AUTO)
+
+    if not isRelevant then
+        if DEBUG then
+            local channelName = channelNames[data.Channel] or string.format("未知(%d)", data.Channel)
+            print("early return, channel: )" .. channelName)
+        end
+        return
+    end
+
+    local soundLevel
+    if data.Channel == 1 or isWeaponByName then
+        soundLevel = 140
+    elseif data.Channel == 4 or isFootstepByName then
+        local speed = entity:GetVelocity():Length()
+        soundLevel = GetFootstepSPLFromSpeed(speed)
+    else
+        soundLevel = data.SoundLevel
+    end
 
     if DEBUG then
         DebugSoundPrinter(data, soundLevel)
@@ -176,6 +200,6 @@ hook.Add("EntityEmitSound", "ENP_EntityEmitSound", function(data)
     local proxies = GetProxiesByVictim(victim)
 
     for _, proxy in ipairs(proxies) do
-        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = math.max(proxy[PROXY_FIELDS.LAST_SOUND_LEVEL], soundLevel) -- 后续处理本帧最有潜力的声音即可
+        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = math.max(proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] or 0, soundLevel) -- 后续处理本帧最有潜力的声音即可
     end
 end)

@@ -55,26 +55,27 @@ ProxyManager = ProxyManager or {}
 ProxyManager.loopCountTable = ProxyManager.loopCountTable or {}
 setmetatable(ProxyManager.loopCountTable, { __mode = "k" })
 
-local PROXY_CLASS               = ProxyManager.PROXY_CLASS
-local PROXY_FIELDS              = ProxyManager.PROXY_FIELDS
-local COMBINE_RANGE             = ProxyManager.ATTACKER_RANGE
-local SIGHT_MEMORY_DURATION     = ProxyManager.SIGHT_MEMORY_DURATION
-local SOUND_MEMORY_DURATION     = ProxyManager.SOUND_MEMORY_DURATION
-local FACE_COOLDOWN             = ProxyManager.FACE_COOLDOWN
-local WALL_THICKNESS_THRESHOLD  = 256
-local WALL_ATTENUATION_PER_UNIT = 0.1
-local HEAR_THRESHOLD            = 10
-local PROXY_OFFSET              = ProxyManager.PROXY_OFFSET
-local DEBUG                     = ProxyManager.DEBUG
+local PROXY_CLASS                   = ProxyManager.PROXY_CLASS
+local PROXY_FIELDS                  = ProxyManager.PROXY_FIELDS
+local COMBINE_RANGE                 = ProxyManager.ATTACKER_RANGE
+local SIGHT_INFO_CERTAINTY_DURATION = ProxyManager.SIGHT_MEMORY_DURATION
+local SOUND_INFO_CERTAINTY_DURATION = ProxyManager.SOUND_MEMORY_DURATION
+local MEMORY_DURATION               = 30
+local FACE_COOLDOWN                 = ProxyManager.FACE_COOLDOWN
+local WALL_THICKNESS_THRESHOLD      = 256
+local WALL_ATTENUATION_PER_UNIT     = 0.1
+local HEAR_THRESHOLD                = 10
+local PROXY_OFFSET                  = ProxyManager.PROXY_OFFSET
+local DEBUG                         = ProxyManager.DEBUG
 
-local IsValid                   = IsValid
-local CurTime                   = CurTime
-local util_TraceLine            = util.TraceLine
-local MASK                      = MASK_VISIBLE
+local IsValid                       = IsValid
+local CurTime                       = CurTime
+local util_TraceLine                = util.TraceLine
+local MASK                          = MASK_VISIBLE
 
-local HULL_SIZE                 = 8 -- 半边长，即从 -2 到 2
-local hullMins                  = Vector(-HULL_SIZE / 2, -HULL_SIZE / 2, -HULL_SIZE / 2)
-local hullMaxs                  = Vector(HULL_SIZE / 2, HULL_SIZE / 2, HULL_SIZE / 2)
+local HULL_SIZE                     = 8 -- 半边长，即从 -2 到 2
+local hullMins                      = Vector(-HULL_SIZE / 2, -HULL_SIZE / 2, -HULL_SIZE / 2)
+local hullMaxs                      = Vector(HULL_SIZE / 2, HULL_SIZE / 2, HULL_SIZE / 2)
 
 -- 坐标量化辅助函数
 local function QuantizeVector(v, gridSize)
@@ -402,38 +403,23 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             proxy[PROXY_FIELDS.LAST_SOUND_TIME] = currentTime
         end
 
-        local hasRecentSight      = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_MEMORY_DURATION
-        local hasRecentSound      = (currentTime - proxy[PROXY_FIELDS.LAST_SOUND_TIME]) <= SOUND_MEMORY_DURATION
-        local hasRecentInfo       = hasRecentSound or hasRecentSight
-        local shouldSuppress      = not isVisible and hasRecentInfo
-        local shouldCloseSuppress = shouldSuppress and not isRanged
+        local hasRecentSight = (currentTime - proxy[PROXY_FIELDS.LAST_SIGHT_TIME]) <= SIGHT_INFO_CERTAINTY_DURATION
+        local hasRecentSound = (currentTime - proxy[PROXY_FIELDS.LAST_SOUND_TIME]) <= SOUND_INFO_CERTAINTY_DURATION
+        local hasRecentInfo  = hasRecentSound or hasRecentSight
+        local shouldSuppress = not isVisible and hasRecentInfo
 
         local targetPos
         local placementReason
 
         if shouldSuppress then
-            if isAudible then -- 本帧可听，设置转向，只需本帧设置一次
-                local lastFace = proxy[PROXY_FIELDS.LAST_FACE_TIME]
-                if currentTime - lastFace >= FACE_COOLDOWN then
-                    local curSched = attacker:GetCurrentSchedule()
-                    if curSched == SCHED_IDLE_STAND or curSched == SCHED_IDLE_WALK or SCHED_IDLE_WANDER then
-                        if not IsValid(attacker:GetEnemy()) then
-                            attacker:SetEnemy(proxy)
-                            attacker:SetSchedule(SCHED_COMBAT_FACE)
-                            proxy[PROXY_FIELDS.LAST_FACE_TIME] = currentTime
-                        end
-                    end
-                end
-            end
-
             if wallThickness > WALL_THICKNESS_THRESHOLD then
                 targetPos = targetBonePos
                 placementReason = "thick wall, proxy at victim"
             else
-                if shouldCloseSuppress then
+                if attackerShootPos:Distance(attackerSideHitPos) < COMBINE_RANGE then
                     targetPos = attackerSideHitPos
                     placementReason = "thin wall, close suppress"
-                else                              -- shouldRangedSuppress = shouldSuppress and isRanged
+                else
                     targetPos = attackerShootPos +
                         direction * COMBINE_RANGE -- COMBINE_RANGE = 1024 + PROXY_OFFSET，已经纳入考虑
                     placementReason = "thin wall, ranged suppress"
@@ -445,6 +431,13 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         else
             targetPos = targetBonePos
             placementReason = "default (visible & in-range or no info)"
+        end
+
+        if hasRecentInfo then
+            attacker:SetEnemy(proxy)
+            attacker:UpdateEnemyMemory(proxy, proxy:GetPos())
+        else
+            attacker:ClearEnemyMemory(proxy)
         end
 
         -- 获取或初始化代理的调试状态表
