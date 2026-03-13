@@ -190,8 +190,7 @@ hook.Add("EntityEmitSound", "ENP_EntityEmitSound", function(data)
         local speed = entity:GetVelocity():Length()
         soundLevel = GetFootstepSPLFromSpeed(speed)
     else
-        soundLevel = data.SoundLevel
-    end
+        soundLevel = 75
 
     if DEBUG then
         DebugSoundPrinter(data, soundLevel)

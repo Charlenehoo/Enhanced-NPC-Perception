@@ -138,7 +138,7 @@ local function ComputeBaseData(attacker, victim, targetPos, lastSoundLevel)
 end
 
 -- 根据标志决策代理放置位置（完全复制旧实现逻辑）
-local function DecideProxyPlacement(attacker, base, targetPos, shouldSuppress, isVisible, isRanged)
+local function DecideProxyPlacement(base, targetPos, shouldSuppress, isVisible, isRanged)
     if shouldSuppress then
         if base.wallThickness > WALL_THICKNESS_THRESHOLD then
             return targetPos, "thick wall, proxy at victim"
@@ -228,8 +228,7 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
 
         -- 4. 决策代理放置位置
         local placementTarget, reason = DecideProxyPlacement(
-            attacker, base, targetPos,
-            shouldSuppress, base.isVisible, base.isRanged
+            base, targetPos, shouldSuppress, base.isVisible, base.isRanged
         )
 
         -- 5. 设置敌人记忆（与旧实现一致）
