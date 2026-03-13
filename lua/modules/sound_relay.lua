@@ -175,6 +175,6 @@ hook.Add("EntityEmitSound", "ENP_EntityEmitSound", function(data)
     local proxies = GetProxiesByVictim(victim)
 
     for _, proxy in ipairs(proxies) do
-        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = soundLevel
+        proxy[PROXY_FIELDS.LAST_SOUND_LEVEL] = math.max(proxy[PROXY_FIELDS.LAST_SOUND_LEVEL], soundLevel) -- 后续处理本帧最有潜力的声音即可
     end
 end)
