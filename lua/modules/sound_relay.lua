@@ -191,6 +191,7 @@ hook.Add("EntityEmitSound", "ENP_EntityEmitSound", function(data)
         soundLevel = GetFootstepSPLFromSpeed(speed)
     else
         soundLevel = 75
+    end
 
     if DEBUG then
         DebugSoundPrinter(data, soundLevel)
