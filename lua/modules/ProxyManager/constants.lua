@@ -14,10 +14,10 @@ ProxyManager.PROXY_FIELDS = {
 ProxyManager.PLAYER_SPAWN_DELAY = 0.15 -- 10 Tick
 ProxyManager.RAGDOLL_REMOVE_DELAY = 3
 
-ProxyManager.SIGHT_MEMORY_DURATION = 3
-ProxyManager.SOUND_MEMORY_DURATION = 1
+ProxyManager.SIGHT_MEMORY_DURATION = 8
+ProxyManager.SOUND_MEMORY_DURATION = 4
 ProxyManager.FACE_COOLDOWN = 15
-ProxyManager.PROXY_OFFSET = 2
+ProxyManager.PROXY_OFFSET = 16
 ProxyManager.ATTACKER_RANGE = ProxyManager.PROXY_OFFSET + 1024
 
 ProxyManager.DEFAULT_ATTACKER_CLASS_PREFIX = "npc_combine"

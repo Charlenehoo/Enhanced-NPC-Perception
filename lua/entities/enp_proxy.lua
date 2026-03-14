@@ -2,7 +2,7 @@
 ProxyManager = ProxyManager or {} -- enp_proxy.lua 早于 autorun 加载
 local PROXY_MODEL = "models/editor/cube_small.mdl"
 local PROXY_FIELDS = ProxyManager.PROXY_FIELDS
-
+local DEBUG = ProxyManager.DEBUG
 
 AddCSLuaFile()
 ENT.Base = "base_ai"
@@ -12,7 +12,10 @@ ENT.AutomaticFrameAdvance = true
 function ENT:Initialize() -- https://wiki.facepunch.com/gmod/ENTITY:Initialize
     self:SetModel(PROXY_MODEL)
     self:SetModelScale(0.04)
-    -- self:SetNoDraw(true)
+    if not DEBUG then
+        self:SetModelScale(0)
+        self:SetNoDraw(true)
+    end
     self:SetCollisionGroup(COLLISION_GROUP_NONE)
 end
 

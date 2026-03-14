@@ -33,10 +33,10 @@
 
     4. 压制射击的条件：墙厚决定能否穿透
        当攻击者拥有受害者信息且视觉不可见时（即受害者位于掩体后），通过 `IsSoundAudible` 返回的累计墙厚（`wallThickness`）来判断掩体是否可穿透：
-          - **薄墙（≤32 单位）**：认为子弹可以穿透此厚度的墙。代理被放置在墙表面（攻击者一侧），使攻击者可见代理（或至少感知到敌人在墙后方向），从而激发其使用武器的穿墙能力向墙后射击，实现压制。
-          - **厚墙（>32 单位）**：子弹无法穿透。为避免攻击者徒劳攻击不可穿透的掩体，代理被放置在受害者位置（墙后），使攻击者无法看见代理，从而触发 Source 引擎的寻路行为，让攻击者绕墙寻找可见目标。
+          - **薄墙（≤256 单位）**：认为子弹可以穿透此厚度的墙。代理被放置在墙表面（攻击者一侧），使攻击者可见代理（或至少感知到敌人在墙后方向），从而激发其使用武器的穿墙能力向墙后射击，实现压制。
+          - **厚墙（>256 单位）**：子弹无法穿透。为避免攻击者徒劳攻击不可穿透的掩体，代理被放置在受害者位置（墙后），使攻击者无法看见代理，从而触发 Source 引擎的寻路行为，让攻击者绕墙寻找可见目标。
 
-       此外，墙厚超过 32 单位（即可穿透的最大厚度）时，`IsSoundAudible` 会直接判定声音不可听见（听觉记忆失效），避免对不可穿透的墙体进行不必要的压制计算，进一步强化厚墙时应绕行的逻辑。
+       此外，墙厚超过 256 单位（即可穿透的最大厚度）时，`IsSoundAudible` 会直接判定声音不可听见（听觉记忆失效），避免对不可穿透的墙体进行不必要的压制计算，进一步强化厚墙时应绕行的逻辑。
 
     5. 基于 Source 引擎 AI 特性的行为引导与增强
        - 攻击者对距离 1024 单位内的敌人才会主动交战（COMBINE_RANGE 基于此设定）。超过此距离，即使武器具备远程射击能力（由武器 Base 定义），引擎也不会给予 NPC 远射的意愿，导致其不会攻击远处目标。
@@ -65,9 +65,9 @@ local FACE_COOLDOWN                 = ProxyManager.FACE_COOLDOWN
 local WALL_THICKNESS_THRESHOLD      = 256
 local WALL_ATTENUATION_PER_UNIT     = 0.1
 local HEAR_THRESHOLD                = 10
-local SOUND_CERTAINTY_BASE          = 0.6
+local SOUND_CERTAINTY_BASE          = 0.5
 local VEC_UP                        = Vector(0, 0, 1)
-local MAX_JITTER                    = 64
+local MAX_JITTER                    = 32
 local HORIZONTAL_FACTOR             = 1.0
 local VERTICAL_FACTOR               = 0.2
 
@@ -217,6 +217,8 @@ local function DecideProxyPlacement(base, targetPos, shouldSuppress, isVisible, 
             local distToHit = base.attackerShootPos:Distance(base.attackerSideHitPos)
             if distToHit < COMBINE_RANGE then
                 return base.attackerSideHitPos, "thin wall, close suppress"
+            elseif distToHit < 2 * PROXY_OFFSET then
+                return targetPos, "attacker too close to wall, fallback to default"
             else
                 return base.attackerShootPos + base.direction * COMBINE_RANGE, "thin wall, ranged suppress"
             end
