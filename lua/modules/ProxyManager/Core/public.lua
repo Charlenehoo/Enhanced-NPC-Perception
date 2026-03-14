@@ -12,6 +12,8 @@ function ProxyManager.GetAttackerProxyMapView(victim) return ProxyManager._priva
 
 function ProxyManager.GetVictimProxyMapView(attacker) return ProxyManager._private._GetVictimProxyMapView(attacker) end
 
+function ProxyManager.GetProxy(victim, attacker) return ProxyManager._private._GetProxy(victim, attacker) end
+
 function ProxyManager.IterateVictimsWithAttackerProxyMapView()
     return ProxyManager._private._IterateVictimsWithAttackerProxyMapView()
 end
@@ -24,6 +26,8 @@ function ProxyManager.MoveProxies(oldVictim, newVictim) -- 须带返回值
 end
 
 function ProxyManager.IsVictim(entity) return ProxyManager._private._IsVictim(entity) end
+
+function ProxyManager.IsAttacker(entity) return ProxyManager._private._IsAttacker(entity) end
 
 function ProxyManager.RemoveAllProxiesByVictim(victim)
     if not victim then return end

@@ -258,6 +258,18 @@ local function _IsVictimImpl(entity)
     return _attackersByVictim[entity] ~= nil
 end
 
+local function _IsAttackerImpl(entity)
+    if not entity then return false end
+    return _victimsByAttacker[entity] ~= nil
+end
+
+local function _GetProxyImpl(victim, attacker)
+    if not IsValid(victim) or not IsValid(attacker) then return nil end
+    local attackerProxyMap = _attackersByVictim[victim]
+    if not attackerProxyMap then return nil end
+    return attackerProxyMap[attacker]
+end
+
 function ProxyManager._private._CreateProxy(victim, attacker) return _CreateProxyImpl(victim, attacker) end
 
 function ProxyManager._private._RemoveProxy(victim, attacker) return _RemoveProxyImpl(victim, attacker) end
@@ -275,3 +287,7 @@ function ProxyManager._private._IterateVictims() return _IterateVictimsImpl() en
 function ProxyManager._private._MoveProxies(oldVictim, newVictim) return _MoveProxiesImpl(oldVictim, newVictim) end
 
 function ProxyManager._private._IsVictim(entity) return _IsVictimImpl(entity) end
+
+function ProxyManager._private._IsAttacker(entity) return _IsAttackerImpl(entity) end
+
+function ProxyManager._private._GetProxy(victim, attacker) return _GetProxyImpl(victim, attacker) end
