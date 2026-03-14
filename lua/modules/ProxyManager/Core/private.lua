@@ -264,7 +264,7 @@ local function _IsAttackerImpl(entity)
 end
 
 local function _GetProxyImpl(victim, attacker)
-    if not IsValid(victim) or not IsValid(attacker) then return nil end
+    if not victim or not attacker then return nil end
     local attackerProxyMap = _attackersByVictim[victim]
     if not attackerProxyMap then return nil end
     return attackerProxyMap[attacker]
