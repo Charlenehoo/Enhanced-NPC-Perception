@@ -5,6 +5,8 @@ if SERVER then
     include("modules/ProxyManager/Core/private.lua")
     include("modules/ProxyManager/Core/public.lua")
     include("modules/ProxyManager/Core/util.lua")
+    include("modules/wall/get_walls.lua")
+    include("modules/wall/predict.lua")
     include("modules/ProxyManager/proxy_sync.lua")
     -- include("modules/ProxyManager/hooks.lua")
     include("modules/3rd_party/soundmanager.lua")

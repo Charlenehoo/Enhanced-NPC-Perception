@@ -230,9 +230,10 @@ local function DecideProxyPlacement(base, targetPos, shouldSuppress, isVisible, 
     end
 end
 
--- 调试状态更新函数（检测变化并突出显示）
-local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound,
-                                     hasRecentInfo, shouldSuppress, reason)
+-- 修改后的 UpdateProxyDebugState 函数
+local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
+                                     hasRecentSight, hasRecentSound, hasRecentInfo,
+                                     shouldSuppress, reason, canPenetrate)
     if not DEBUG then return end
     if not proxy._debugState then proxy._debugState = {} end
     local oldState = proxy._debugState
@@ -245,9 +246,10 @@ local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
         shouldSuppress = shouldSuppress,
         isRanged = base.isRanged,
         placementReason = reason,
+        canPenetrate = canPenetrate, -- 新增字段
     }
 
-    -- 收集变化的字段
+    -- 收集变化的字段（同样包含 canPenetrate）
     local changes = {}
     for k, v in pairs(newState) do
         if oldState[k] ~= v then
@@ -255,19 +257,17 @@ local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
         end
     end
 
-    if next(changes) then -- 有变化才打印
+    if next(changes) then
         print("========== [代理同步] ==========")
         print(string.format("攻击者: [%d] %s", attacker:EntIndex(), attacker:GetClass()))
         print(string.format("受害者: [%d] %s", victim:EntIndex(), victim:GetClass()))
         print(string.format("当前时间: %.2f", currentTime))
 
-        -- 突出显示变化字段
         print("--- 变化字段 ---")
         for k, change in pairs(changes) do
             print(string.format("%s: %s -> %s", k, tostring(change.old), tostring(change.new)))
         end
 
-        -- 打印完整状态（可选，便于查看上下文）
         print("--- 完整状态 ---")
         print(string.format("视觉可见: %s", tostring(base.isVisible)))
         print(string.format("听觉可听: %s", tostring(base.isAudible)))
@@ -278,6 +278,7 @@ local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
         print(string.format("压制状态: %s", tostring(shouldSuppress)))
         print(string.format("超出范围: %s", tostring(base.isRanged)))
         print(string.format("放置原因: %s", tostring(reason)))
+        print(string.format("可穿透: %s", tostring(canPenetrate))) -- 新增打印
         print("================================\n")
 
         proxy._debugState = newState
@@ -308,11 +309,16 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local hasRecentInfo = confidence > 0
         local shouldSuppress = not base.isVisible and hasRecentInfo
 
-        -- 新增：异步穿透判断相关变量
+        -- 计算视觉/听觉记忆标志（用于调试）
+        local lastSight = proxy[PROXY_FIELDS.LAST_SIGHT_TIME] or 0
+        local lastSound = proxy[PROXY_FIELDS.LAST_SOUND_TIME] or 0
+        local hasRecentSight = (base.isVisible or (currentTime - lastSight) < SIGHT_INFO_CERTAINTY_DURATION)
+        local hasRecentSound = (base.isAudible or (currentTime - lastSound) < SOUND_INFO_CERTAINTY_DURATION)
+
         local canPenetrate = nil
+        local placementReason
 
         if shouldSuppress then
-            -- 获取武器相关参数（用于异步任务）
             local wep = attacker:GetActiveWeapon()
             local isArc9 = IsValid(wep) and wep.ARC9
 
@@ -341,13 +347,13 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             if not proxy._penetrationTask and isArc9 then
                 local pen = wep:GetProcessedValue("Penetration")
                 local maxLayers = wep.MaxPenetrationLayers or 3
-                -- 创建异步任务
-                local walls, newTask = RegisterWallInfoAlongLine(attacker, victim, base.attackerShootPos, targetPos)
+                -- 创建异步任务，注意返回值顺序：任务对象在前，墙壁表在后
+                local newTask, walls = RegisterWallInfoAlongLine(attacker, victim, base.attackerShootPos, targetPos)
                 proxy._penetrationTask = newTask
                 proxy._penetrationParams = { pen = pen, maxLayers = maxLayers }
-                -- 将任务对象与结果表关联（以便完成后获取 walls）
+                -- 将墙壁表也存入任务对象，方便完成后直接取用（可选，但任务内部已有 self.walls）
                 newTask.walls = walls
-                -- 此时任务尚未完成，canPenetrate 还未计算，先不设置
+                -- 此时任务尚未完成，canPenetrate 还未计算
             end
 
             -- 若 canPenetrate 仍为 nil，则使用旧阈值回退
@@ -376,7 +382,6 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
                 proxy._penetrationParams = nil
                 proxy._lastCanPenetrate = nil
             end
-            -- 原有逻辑：非压制时按旧规则放置
             if base.isVisible and base.isRanged then
                 targetPos = base.attackerShootPos + base.direction * COMBINE_RANGE
                 placementReason = "visible out of range"
@@ -386,7 +391,6 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             end
         end
 
-        -- 以下代码不变：设置代理位置、角度、敌人关系、调试等
         local idealPos = targetPos - base.direction * PROXY_OFFSET
         local finalPos = ComputeJitteredPosition(idealPos, base.direction, confidence)
 
@@ -395,8 +399,10 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
             attacker:UpdateEnemyMemory(proxy, proxy:GetPos())
         end
 
-        UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound, hasRecentInfo,
-            shouldSuppress, placementReason)
+        -- 调试输出，传入 canPenetrate
+        UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
+            hasRecentSight, hasRecentSound, hasRecentInfo,
+            shouldSuppress, placementReason, canPenetrate)
 
         proxy:SetPos(finalPos)
         proxy:SetAngles(base.direction:Angle())
