@@ -284,7 +284,6 @@ local function UpdateProxyDebugState(proxy, currentTime, attacker, victim, base,
     end
 end
 
--- 主同步函数（完全保持旧实现的顺序和行为）
 local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
     local currentTime = CurTime()
     local targetPos = GetTargetPosition(victim)
@@ -309,11 +308,86 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         local hasRecentInfo = confidence > 0
         local shouldSuppress = not base.isVisible and hasRecentInfo
 
-        local placementTarget, reason = DecideProxyPlacement(
-            base, targetPos, shouldSuppress, base.isVisible, base.isRanged
-        )
+        -- 新增：异步穿透判断相关变量
+        local canPenetrate = nil
 
-        local idealPos = placementTarget - base.direction * PROXY_OFFSET
+        if shouldSuppress then
+            -- 获取武器相关参数（用于异步任务）
+            local wep = attacker:GetActiveWeapon()
+            local isArc9 = IsValid(wep) and wep.ARC9
+
+            -- 处理已有的异步任务
+            local task = proxy._penetrationTask
+            if task then
+                local finished = task:Step()
+                if finished then
+                    -- 任务完成，使用缓存的武器参数计算结果
+                    local params = proxy._penetrationParams
+                    if params and task.walls then
+                        local result = PredictPenetration(task.walls, params.pen, params.maxLayers)
+                        canPenetrate = (result == PenetrationResult.CAN_PENETRATE or result == PenetrationResult.UNCERTAIN)
+                        proxy._lastCanPenetrate = canPenetrate
+                    end
+                    -- 清理任务和参数
+                    proxy._penetrationTask = nil
+                    proxy._penetrationParams = nil
+                else
+                    -- 任务未完成，使用上次结果（如果有）
+                    canPenetrate = proxy._lastCanPenetrate
+                end
+            end
+
+            -- 如果没有任务（或任务刚完成清理），且武器有效，则创建新任务
+            if not proxy._penetrationTask and isArc9 then
+                local pen = wep:GetProcessedValue("Penetration")
+                local maxLayers = wep.MaxPenetrationLayers or 3
+                -- 创建异步任务
+                local walls, newTask = RegisterWallInfoAlongLine(attacker, victim, base.attackerShootPos, targetPos)
+                proxy._penetrationTask = newTask
+                proxy._penetrationParams = { pen = pen, maxLayers = maxLayers }
+                -- 将任务对象与结果表关联（以便完成后获取 walls）
+                newTask.walls = walls
+                -- 此时任务尚未完成，canPenetrate 还未计算，先不设置
+            end
+
+            -- 若 canPenetrate 仍为 nil，则使用旧阈值回退
+            if canPenetrate == nil then
+                canPenetrate = (base.wallThickness <= WALL_THICKNESS_THRESHOLD)
+            end
+
+            -- 根据 canPenetrate 决定 targetPos
+            if canPenetrate then
+                local distToHit = base.attackerShootPos:Distance(base.attackerSideHitPos)
+                if distToHit < COMBINE_RANGE then
+                    targetPos = base.attackerSideHitPos
+                    placementReason = "thin wall, close suppress"
+                else
+                    targetPos = base.attackerShootPos + base.direction * COMBINE_RANGE
+                    placementReason = "thin wall, ranged suppress"
+                end
+            else
+                targetPos = targetPos -- 原 targetPos 是 targetBonePos
+                placementReason = "thick wall, proxy at victim"
+            end
+        else
+            -- 非压制状态，清除异步任务缓存
+            if proxy._penetrationTask then
+                proxy._penetrationTask = nil
+                proxy._penetrationParams = nil
+                proxy._lastCanPenetrate = nil
+            end
+            -- 原有逻辑：非压制时按旧规则放置
+            if base.isVisible and base.isRanged then
+                targetPos = base.attackerShootPos + base.direction * COMBINE_RANGE
+                placementReason = "visible out of range"
+            else
+                targetPos = targetPos
+                placementReason = "default (visible & in-range or no info)"
+            end
+        end
+
+        -- 以下代码不变：设置代理位置、角度、敌人关系、调试等
+        local idealPos = targetPos - base.direction * PROXY_OFFSET
         local finalPos = ComputeJitteredPosition(idealPos, base.direction, confidence)
 
         if hasRecentInfo then
@@ -322,9 +396,8 @@ local function SyncProxiesForSingleVictim(victim, attackerProxyMapView)
         end
 
         UpdateProxyDebugState(proxy, currentTime, attacker, victim, base, hasRecentSight, hasRecentSound, hasRecentInfo,
-            shouldSuppress, reason)
+            shouldSuppress, placementReason)
 
-        -- 7. 设置代理位置和角度
         proxy:SetPos(finalPos)
         proxy:SetAngles(base.direction:Angle())
     end
